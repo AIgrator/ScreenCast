@@ -4,10 +4,12 @@ import os
 import re
 import time
 
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QCursor, QMouseEvent
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QLineEdit, QFileDialog, QComboBox,
-    QToolButton, QToolTip
+    QToolButton, QApplication
 )
 
 logger = logging.getLogger(__name__)
@@ -48,17 +50,73 @@ QUICK_TOKENS = [
 ]
 
 
+class CustomTooltip(QWidget):
+    _instance = None
+
+    def __init__(self, text, parent=None):
+        super().__init__(None, Qt.WindowType.ToolTip)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._text = text
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+
+    def show_at(self, pos):
+        label = QLabel(self._text)
+        label.setStyleSheet(
+            "QLabel { background: #2a2a2a; color: #e0e0e0; padding: 12px; "
+            "border: 1px solid #555; border-radius: 4px; font-size: 12px; }"
+        )
+        label.setWordWrap(True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(label)
+        self.adjustSize()
+
+        screen = QApplication.screenAt(pos)
+        if screen:
+            sr = screen.availableGeometry()
+            w = self.width()
+            h = self.height()
+            x = pos.x() - w - 10
+            y = pos.y() - h // 2
+            if x < sr.left():
+                x = pos.x() + 20
+            if y < sr.top():
+                y = sr.top()
+            if y + h > sr.bottom():
+                y = sr.bottom() - h
+            self.move(x, y)
+
+        self.show()
+        self._timer.start(15000)
+
+    def leaveEvent(self, event):
+        self.hide()
+
+
 class HelpButton(QToolButton):
     def __init__(self, text, parent=None):
         super().__init__(parent)
         self.setText("?")
         self.setFixedSize(22, 22)
         self._tooltip_text = text
+        self._tooltip = None
         self.setStyleSheet("QToolButton { font-weight: bold; border: 1px solid #888; border-radius: 10px; }")
 
     def enterEvent(self, event):
-        pos = self.mapToGlobal(self.rect().center())
-        QToolTip.showText(pos, self._tooltip_text, self)
+        pos = QCursor.pos()
+        self._tooltip = CustomTooltip(self._tooltip_text, self)
+        self._tooltip.show_at(pos)
+
+    def leaveEvent(self, event):
+        if self._tooltip:
+            self._tooltip.hide()
 
 
 def _next_counter(output_dir, pattern):
