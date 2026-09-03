@@ -253,23 +253,21 @@ class ScreenRecorder(QObject):
         if self.audio_thread:
             self.audio_thread.join()
         self.is_recording = False
-        self._mux_files()
+        threading.Thread(target=self._mux_files, daemon=True).start()
 
     def _get_duration(self, filepath):
         try:
-            ffprobe_bin = imageio_ffmpeg.get_ffmpeg_exe().replace("ffmpeg", "ffprobe")
-            if not os.path.exists(ffprobe_bin):
-                ffprobe_bin = imageio_ffmpeg.get_ffmpeg_exe()
-                cmd = [ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
-                       "-of", "default=noprint_wrappers=1:nokey=1", filepath]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                return float(result.stdout.strip())
-            cmd = [ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
-                   "-of", "default=noprint_wrappers=1:nokey=1", filepath]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            return float(result.stdout.strip())
+            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+            cmd = [ffmpeg_bin, "-i", filepath, "-f", "null", "-"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            for line in result.stderr.splitlines():
+                if "Duration:" in line:
+                    dur_str = line.split("Duration:")[1].split(",")[0].strip()
+                    h, m, s = dur_str.split(":")
+                    return int(h) * 3600 + int(m) * 60 + float(s)
         except Exception:
-            return None
+            pass
+        return None
 
     def _mux_files(self):
         try:
