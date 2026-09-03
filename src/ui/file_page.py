@@ -6,7 +6,8 @@ import time
 
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QLineEdit, QFileDialog, QComboBox
+    QLabel, QPushButton, QLineEdit, QFileDialog, QComboBox,
+    QToolButton
 )
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,14 @@ class FilePageWidget(QWidget):
         self.pattern_input.setText(self.sm.get("filename_pattern", DEFAULT_PATTERN))
         self.pattern_input.textChanged.connect(self._update_preview)
         pattern_row.addWidget(self.pattern_input)
+
+        btn_help = QToolButton()
+        btn_help.setText("?")
+        btn_help.setFixedSize(22, 22)
+        btn_help.setToolTip(TOKEN_HELP)
+        btn_help.setStyleSheet("QToolButton { font-weight: bold; border: 1px solid #888; border-radius: 10px; }")
+        pattern_row.addWidget(btn_help)
+
         pattern_layout.addLayout(pattern_row)
 
         tokens_row = QHBoxLayout()
@@ -150,11 +159,6 @@ class FilePageWidget(QWidget):
         self.preview_label = QLabel()
         self.preview_label.setStyleSheet("color: #888; font-size: 11px;")
         pattern_layout.addWidget(self.preview_label)
-
-        help_label = QLabel(TOKEN_HELP)
-        help_label.setStyleSheet("color: #666; font-size: 10px;")
-        help_label.setWordWrap(True)
-        pattern_layout.addWidget(help_label)
 
         pattern_group.setLayout(pattern_layout)
         layout.addRow(pattern_group)
