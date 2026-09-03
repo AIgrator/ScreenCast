@@ -4,6 +4,7 @@ import threading
 import os
 import subprocess
 import logging
+import warnings
 import numpy as np
 import cv2
 import mss
@@ -17,6 +18,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from src.settings_manager import SettingsManager
 from src.ui.settings_dialog import SettingsDialog, RESOLUTION_PRESETS
+
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="soundcard")
 
 CONFIG_FILE = os.path.join(os.getcwd(), "settings.json")
 
