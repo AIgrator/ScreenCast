@@ -13,6 +13,7 @@ from src.settings_manager import SettingsManager
 from src.ui.settings_dialog import SettingsDialog
 from src.hotkey_manager import HotkeyManager
 from src.screen_recorder import ScreenRecorder, AudioDevices
+from src import translation_manager as tr
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="soundcard")
 
@@ -36,11 +37,9 @@ def setup_logging():
         file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
-        logging.info(f"Логирование настроено: {log_file}")
+        logging.info(tr.t("log.logging_setup", path=log_file))
     except Exception as e:
-        print(f"Не удалось настроить логирование: {e}")
-
-setup_logging()
+        print(tr.t("log.logging_failed", error=e))
 
 
 class TrayApp(QObject):
@@ -49,15 +48,18 @@ class TrayApp(QObject):
 
     def __init__(self):
         super().__init__()
-        logging.info("Инициализация TrayApp...")
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
 
         self.sm = SettingsManager(CONFIG_FILE)
+        tr.init(self.sm.get("language", "en"))
+        setup_logging()
+        logging.info(tr.t("log.init_tray"))
+
         self.selected_monitor = self.sm.get("selected_monitor", 1)
         self.selected_audio_device = self.sm.get("selected_audio_device")
         self.recorder = None
-        self._state = "idle"  # idle | recording | saving
+        self._state = "idle"
         self._save_percent = 0
 
         self.tray_icon = QSystemTrayIcon()
@@ -65,25 +67,25 @@ class TrayApp(QObject):
 
         self.menu = QMenu()
 
-        self.action_toggle = self.menu.addAction("Начать запись")
+        self.action_toggle = self.menu.addAction(tr.t("menu.start_recording"))
         self.action_toggle.triggered.connect(self.toggle_recording)
 
         self.menu.addSeparator()
 
-        self.menu_monitors = self.menu.addMenu("Выбрать монитор")
+        self.menu_monitors = self.menu.addMenu(tr.t("menu.select_monitor"))
         self.populate_monitors()
 
-        self.menu_audio = self.menu.addMenu("Выбрать источник звука")
+        self.menu_audio = self.menu.addMenu(tr.t("menu.select_audio"))
         self.populate_audio_devices()
 
         self.menu.addSeparator()
 
-        self.action_settings = self.menu.addAction("Настройки...")
+        self.action_settings = self.menu.addAction(tr.t("menu.settings"))
         self.action_settings.triggered.connect(self.open_settings)
 
         self.menu.addSeparator()
 
-        self.action_quit = self.menu.addAction("Выход")
+        self.action_quit = self.menu.addAction(tr.t("menu.exit"))
         self.action_quit.triggered.connect(self.quit_app)
 
         self.tray_icon.setContextMenu(self.menu)
@@ -95,8 +97,8 @@ class TrayApp(QObject):
         self.hotkey_mgr = HotkeyManager(self.sm, self._on_hotkey_pressed)
 
         self._update_menu_action()
-        self._notify("Lecture Recorder", "Приложение запущено в трее.")
-        logging.info("TrayApp запущен.")
+        self._notify(tr.t("app_name"), tr.t("app_started"))
+        logging.info(tr.t("log.tray_started"))
 
     def update_tray_icon(self):
         pixmap = QPixmap(32, 32)
@@ -149,15 +151,26 @@ class TrayApp(QObject):
 
     def _update_menu_action(self):
         texts = {
-            "idle": "Начать запись",
-            "recording": "Остановить запись",
-            "saving": "Сохранение...",
+            "idle": tr.t("menu.start_recording"),
+            "recording": tr.t("menu.stop_recording"),
+            "saving": tr.t("menu.saving"),
         }
-        self.action_toggle.setText(texts.get(self._state, "Начать запись"))
+        self.action_toggle.setText(texts.get(self._state, tr.t("menu.start_recording")))
         self.action_toggle.setIcon(self._make_circle_icon(self._get_state_color()))
 
     def _on_settings_changed(self, new_settings):
+        new_lang = new_settings.get("language", "en")
+        if new_lang != tr._current_lang:
+            tr.init(new_lang)
+            self._update_all_texts()
         self.update_tray_icon()
+        self._update_menu_action()
+
+    def _update_all_texts(self):
+        self.menu_monitors.setTitle(tr.t("menu.select_monitor"))
+        self.menu_audio.setTitle(tr.t("menu.select_audio"))
+        self.action_settings.setText(tr.t("menu.settings"))
+        self.action_quit.setText(tr.t("menu.exit"))
         self._update_menu_action()
 
     def populate_monitors(self):
@@ -165,25 +178,28 @@ class TrayApp(QObject):
         try:
             with mss.MSS() as sct:
                 for i, monitor in enumerate(sct.monitors):
-                    name = "Все мониторы" if i == 0 else f"Монитор {i} ({monitor['width']}x{monitor['height']})"
+                    if i == 0:
+                        name = tr.t("menu.all_monitors")
+                    else:
+                        name = tr.t("menu.monitor", index=i, width=monitor['width'], height=monitor['height'])
                     action = self.menu_monitors.addAction(name)
                     action.setCheckable(True)
                     if i == self.selected_monitor:
                         action.setChecked(True)
                     action.triggered.connect(lambda checked, idx=i: self.set_monitor(idx))
         except Exception as e:
-            logging.error(f"Мониторы: {e}", exc_info=True)
+            logging.error(tr.t("log.monitors_error", error=e), exc_info=True)
 
     def set_monitor(self, idx):
         self.selected_monitor = idx
         self.sm.set("selected_monitor", idx)
         self.populate_monitors()
-        logging.info(f"Монитор: #{idx}")
+        logging.info(tr.t("log.monitor_selected", index=idx))
 
     def populate_audio_devices(self):
         self.menu_audio.clear()
         try:
-            default_action = self.menu_audio.addAction("По умолчанию")
+            default_action = self.menu_audio.addAction(tr.t("menu.default"))
             default_action.setCheckable(True)
             if self.selected_audio_device is None:
                 default_action.setChecked(True)
@@ -196,18 +212,18 @@ class TrayApp(QObject):
                     action.setChecked(True)
                 action.triggered.connect(lambda checked, d_id=dev_id: self.set_audio_device(d_id))
         except Exception as e:
-            logging.error(f"Аудио: {e}", exc_info=True)
+            logging.error(tr.t("log.audio_error", error=e), exc_info=True)
 
     def set_audio_device(self, dev_id):
         self.selected_audio_device = dev_id
         self.sm.set("selected_audio_device", dev_id)
         self.populate_audio_devices()
-        logging.info(f"Аудио: {dev_id}")
+        logging.info(tr.t("log.audio_selected", device=dev_id))
 
     def open_settings(self):
         dlg = SettingsDialog(self.sm)
         if dlg.exec():
-            self._notify("Настройки", "Настройки сохранены.")
+            self._notify(tr.t("notify.settings"), tr.t("notify.settings_saved"))
 
     def _notify(self, title, message, icon=QSystemTrayIcon.MessageIcon.Information, duration=2000):
         if self.sm.get("show_notifications", True):
@@ -218,11 +234,11 @@ class TrayApp(QObject):
 
     def toggle_recording(self):
         if self._state == "saving":
-            logging.info("Hotkey: идёт сохранение, игнорируем.")
+            logging.info(tr.t("log.hotkey_saving"))
             return
 
         if self._state == "recording":
-            logging.info("Hotkey: остановка записи...")
+            logging.info(tr.t("log.hotkey_stop"))
             self._state = "saving"
             self._save_percent = 0
             self.update_tray_icon()
@@ -230,7 +246,7 @@ class TrayApp(QObject):
             self.action_toggle.setEnabled(False)
             threading.Thread(target=self._stop_and_save, daemon=True).start()
         else:
-            logging.info("Hotkey: запуск записи...")
+            logging.info(tr.t("log.hotkey_start"))
             output_dir = self.sm.get("output_dir", os.path.join(os.getcwd(), "videos"))
             self.recorder = ScreenRecorder(
                 output_dir=output_dir,
@@ -244,7 +260,7 @@ class TrayApp(QObject):
             self._state = "recording"
             self.update_tray_icon()
             self._update_menu_action()
-            self._notify("Запись", "Запись начата")
+            self._notify(tr.t("notify.recording"), tr.t("notify.recording_started"))
 
     def _stop_and_save(self):
         self.recorder.stop()
@@ -263,11 +279,11 @@ class TrayApp(QObject):
         self._update_menu_action()
         self.action_toggle.setEnabled(True)
         if filepath:
-            logging.info(f"Запись сохранена: {filepath}")
-            self._notify("Запись завершена", f"Файл сохранён:\n{filepath}", duration=4000)
+            logging.info(tr.t("log.recording_saved", path=filepath))
+            self._notify(tr.t("notify.recording_finished"), tr.t("notify.file_saved", path=filepath), duration=4000)
         else:
-            logging.error("Не удалось свести файлы")
-            self._notify("Ошибка", "Не удалось свести файлы", QSystemTrayIcon.MessageIcon.Warning, 3000)
+            logging.error(tr.t("log.mux_failed"))
+            self._notify(tr.t("notify.error"), tr.t("notify.mux_failed"), QSystemTrayIcon.MessageIcon.Warning, 3000)
 
     def quit_app(self):
         if self.recorder and self.recorder.is_recording:
@@ -284,4 +300,8 @@ if __name__ == "__main__":
         tray_app = TrayApp()
         tray_app.run()
     except Exception as e:
-        logging.critical(f"Критическая ошибка: {e}", exc_info=True)
+        try:
+            msg = tr.t("log.critical_error", error=e)
+        except Exception:
+            msg = f"Critical error: {e}"
+        logging.critical(msg, exc_info=True)

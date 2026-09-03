@@ -1,6 +1,8 @@
 import logging
 from pynput import keyboard
 
+from src import translation_manager as tr
+
 
 class HotkeyManager:
     """Manages global hotkeys via pynput."""
@@ -39,9 +41,9 @@ class HotkeyManager:
             self.listener = keyboard.GlobalHotKeys({pynput_hk: self.toggle_callback})
             self.listener.start()
             self._last_hotkey = hk_str
-            logging.info(f"Hotkey зарегистрирован: {hk_str}")
+            logging.info(tr.t("log.hotkey_registered", hotkey=hk_str))
         except Exception as e:
-            logging.error(f"Ошибка регистрации hotkey: {e}", exc_info=True)
+            logging.error(tr.t("log.hotkey_error", error=e), exc_info=True)
             self.listener = None
 
     def stop(self):

@@ -7,6 +7,8 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QToolButton, QVBoxLayout
 )
 
+from src import translation_manager as tr
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +26,7 @@ class HotkeyLineEdit(QLineEdit):
         self.button = QToolButton(self)
         self.button.setText("\u2026")
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.button.setToolTip("Выбрать комбинацию\u2026")
+        self.button.setToolTip(tr.t("hotkey.choose_tooltip"))
         self.button.setFixedWidth(22)
         self.button.clicked.connect(self.open_hotkey_dialog)
         self.setTextMargins(0, 0, self.button.width(), 0)
@@ -50,7 +52,7 @@ class HotkeyLineEdit(QLineEdit):
     def focusInEvent(self, event):
         super().focusInEvent(event)
         self._is_recording = True
-        self.setText("Нажмите комбинацию\u2026")
+        self.setText(tr.t("hotkey.press_combination"))
         self.setStyleSheet("QLineEdit { background-color: #1a1a2e; color: #e94560; }")
 
     def focusOutEvent(self, event):
@@ -128,7 +130,7 @@ class HotkeyDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Выберите комбинацию клавиш")
+        self.setWindowTitle(tr.t("hotkey.choose_combination"))
         self.setModal(True)
         layout = QVBoxLayout(self)
 
@@ -143,14 +145,14 @@ class HotkeyDialog(QDialog):
         mod_layout.addWidget(self.win_cb)
         layout.addLayout(mod_layout)
 
-        layout.addWidget(QLabel("Клавиша:"))
+        layout.addWidget(QLabel(tr.t("hotkey.key")))
         self.key_combo = QComboBox()
         self._populate_keys()
         layout.addWidget(self.key_combo)
 
         btn_layout = QHBoxLayout()
         ok_btn = QPushButton('OK')
-        cancel_btn = QPushButton('Отмена')
+        cancel_btn = QPushButton(tr.t("hotkey.cancel"))
         ok_btn.clicked.connect(self.accept)
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(ok_btn)

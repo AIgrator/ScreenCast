@@ -4,14 +4,17 @@ import os
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
+from src import translation_manager as tr
+
 logger = logging.getLogger(__name__)
 
 class SettingsManager(QObject):
     DEFAULTS = {
+        "language": "en",
         "output_dir": os.path.join(os.getcwd(), "videos"),
         "filename_pattern": "%Y%m%d-%H%M%S",
         "hotkeys": {
-            "toggle_recording": "Ctrl+Shift+R",
+            "toggle_recording": "Ctrl+Shift+F",
         },
         "show_notifications": True,
         "tray_colors": {
@@ -49,7 +52,7 @@ class SettingsManager(QObject):
                     result[k] = {**v, **data.get(k, {})}
             return result
         except Exception as e:
-            logger.warning(f"Ошибка загрузки настроек: {e}. Используем дефолтные.")
+            logger.warning(tr.t("log.settings_load_error", error=e))
             return self.DEFAULTS.copy()
 
     def get(self, key, default=None):
@@ -74,7 +77,7 @@ class SettingsManager(QObject):
                 json.dump(self._settings, f, ensure_ascii=False, indent=2)
             self.settings_changed.emit(self._settings)
         except Exception as e:
-            logger.error(f"Ошибка сохранения настроек: {e}")
+            logger.error(tr.t("log.settings_save_error", error=e))
 
     def all(self):
         return self._settings

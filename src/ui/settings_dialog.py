@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 from .main_page import MainPageWidget
 from .settings_page import SettingsPageWidget
 from .file_page import FilePageWidget
+from src import translation_manager as tr
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings_manager, parent=None):
         super().__init__(parent)
         self.sm = settings_manager
-        self.setWindowTitle("Настройки")
+        self.setWindowTitle(tr.t("settings.title"))
         self.setMinimumWidth(520)
         self.init_ui()
 
@@ -37,16 +38,16 @@ class SettingsDialog(QDialog):
         self.file_page = FilePageWidget(self.sm)
         self.settings_page = SettingsPageWidget(self.sm)
 
-        tabs.addTab(self.main_page, "Главная")
-        tabs.addTab(self.file_page, "Путь и имя файла")
-        tabs.addTab(self.settings_page, "Качество")
+        tabs.addTab(self.main_page, tr.t("settings.tab_main"))
+        tabs.addTab(self.file_page, tr.t("settings.tab_file"))
+        tabs.addTab(self.settings_page, tr.t("settings.tab_quality"))
 
         layout.addWidget(tabs)
 
         btn_layout = QHBoxLayout()
-        btn_save = QPushButton("Сохранить")
+        btn_save = QPushButton(tr.t("settings.save"))
         btn_save.clicked.connect(self.on_save)
-        btn_cancel = QPushButton("Отмена")
+        btn_cancel = QPushButton(tr.t("settings.cancel"))
         btn_cancel.clicked.connect(self.reject)
         btn_layout.addStretch()
         btn_layout.addWidget(btn_save)

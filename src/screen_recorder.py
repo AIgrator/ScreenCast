@@ -15,6 +15,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from src.ui.settings_dialog import RESOLUTION_PRESETS
 from src.ui.file_page import parse_filename_pattern
+from src import translation_manager as tr
 
 
 class AudioDevices:
@@ -26,7 +27,7 @@ class AudioDevices:
             for sp in speakers:
                 devices_map.append((sp.id, sp.name))
         except Exception as e:
-            logging.error(f"Ошибка получения динамиков: {e}")
+            logging.error(tr.t("log.speakers_error", error=e))
         return devices_map
 
 
@@ -44,7 +45,7 @@ class ScreenRecorder(QObject):
         try:
             os.makedirs(self.output_dir, exist_ok=True)
         except Exception as e:
-            logging.error(f"Ошибка создания папки {self.output_dir}: {e}", exc_info=True)
+            logging.error(tr.t("log.output_dir_error", path=self.output_dir, error=e), exc_info=True)
 
         pattern = self.sm.get("filename_pattern", "%Y%m%d-%H%M%S") if self.sm else "%Y%m%d-%H%M%S"
         base_name = parse_filename_pattern(pattern, self.output_dir)
@@ -60,7 +61,7 @@ class ScreenRecorder(QObject):
         self.is_recording = False
 
     def _record_video(self):
-        logging.info("Поток записи видео запущен.")
+        logging.info(tr.t("log.video_thread_started"))
         if platform.system() == "Windows":
             try:
                 import ctypes
@@ -74,7 +75,7 @@ class ScreenRecorder(QObject):
                 if self.monitor_index < len(sct.monitors):
                     monitor = sct.monitors[self.monitor_index]
                 else:
-                    logging.warning(f"Монитор #{self.monitor_index} не найден, основной.")
+                    logging.warning(tr.t("log.monitor_not_found", index=self.monitor_index))
                     monitor = sct.monitors[1]
 
                 src_w = monitor["width"]
@@ -87,13 +88,13 @@ class ScreenRecorder(QObject):
                 fps = self.sm.get("video_fps", 15)
 
                 need_resize = (src_w != out_w or src_h != out_h)
-                logging.info(f"Захват монитора #{self.monitor_index}: {src_w}x{src_h} -> {out_w}x{out_h}, {fps} FPS")
+                logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
                 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
                 writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
 
                 if not writer.isOpened():
-                    raise RuntimeError(f"VideoWriter не открылся: {self.video_temp}")
+                    raise RuntimeError(tr.t("log.videowriter_failed", path=self.video_temp))
 
                 frame_interval = 1.0 / fps
                 next_frame_time = time.time()
@@ -106,7 +107,7 @@ class ScreenRecorder(QObject):
                             frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         writer.write(frame)
                     except Exception as e:
-                        logging.error(f"Ошибка кадра: {e}", exc_info=True)
+                        logging.error(tr.t("log.frame_error", error=e), exc_info=True)
 
                     next_frame_time += frame_interval
                     sleep_time = next_frame_time - time.time()
@@ -116,19 +117,19 @@ class ScreenRecorder(QObject):
                         next_frame_time = time.time()
 
                 writer.release()
-                logging.info("Видео writer закрыт.")
+                logging.info(tr.t("log.video_writer_closed"))
         except Exception as e:
-            logging.error(f"Ошибка потока видео: {e}", exc_info=True)
+            logging.error(tr.t("log.video_thread_error", error=e), exc_info=True)
 
     def _record_audio(self):
-        logging.info("Поток записи системного аудио запущен.")
+        logging.info(tr.t("log.audio_thread_started"))
         try:
             sp = None
             if self.audio_device_id is not None:
                 try:
                     sp = sc.get_speaker(str(self.audio_device_id))
                 except Exception as e:
-                    logging.warning(f"Динамик {self.audio_device_id}: {e}")
+                    logging.warning(tr.t("log.speaker_error", device=self.audio_device_id, error=e))
             if sp is None:
                 sp = sc.default_speaker()
 
@@ -136,7 +137,7 @@ class ScreenRecorder(QObject):
             samplerate = self.sm.get("audio_sample_rate", 48000)
             out_channels = 2
 
-            logging.info(f"Loopback: {sp.name}, каналов {sp.channels}, {samplerate} Hz")
+            logging.info(tr.t("log.loopback_info", name=sp.name, channels=sp.channels, samplerate=samplerate))
 
             with mic.recorder(samplerate=samplerate, channels=sp.channels, blocksize=4096) as recorder, \
                  sf.SoundFile(self.audio_temp, mode='w', samplerate=samplerate, channels=out_channels, subtype='PCM_16') as file:
@@ -147,16 +148,16 @@ class ScreenRecorder(QObject):
                             data = data[:, :2]
                         file.write(data)
                     except Exception as e:
-                        logging.error(f"Аудиокадр: {e}", exc_info=True)
+                        logging.error(tr.t("log.audio_frame_error", error=e), exc_info=True)
                         time.sleep(0.01)
-            logging.info("Аудио завершено.")
+            logging.info(tr.t("log.audio_finished"))
         except Exception as e:
-            logging.error(f"Ошибка потока аудио: {e}", exc_info=True)
+            logging.error(tr.t("log.audio_thread_error", error=e), exc_info=True)
 
     def start(self):
         if self.is_recording:
             return
-        logging.info("Запуск записи...")
+        logging.info(tr.t("log.starting_recording"))
         self.is_recording = True
         self.stop_event.clear()
         self.video_thread = threading.Thread(target=self._record_video, daemon=True)
@@ -167,7 +168,7 @@ class ScreenRecorder(QObject):
     def stop(self):
         if not self.is_recording:
             return
-        logging.info("Остановка записи...")
+        logging.info(tr.t("log.stopping_recording"))
         self.stop_event.set()
         if self.video_thread:
             self.video_thread.join()
@@ -198,7 +199,7 @@ class ScreenRecorder(QObject):
             abr = self.sm.get("audio_bitrate", 256)
 
             duration = self._get_duration(self.video_temp)
-            logging.info(f"Длительность видео: {duration} сек")
+            logging.info(tr.t("log.video_duration", duration=duration))
 
             if has_audio:
                 cmd = [
@@ -210,7 +211,7 @@ class ScreenRecorder(QObject):
                     self.output_file
                 ]
             else:
-                logging.warning("Аудио отсутствует, видео без звука.")
+                logging.warning(tr.t("log.no_audio"))
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp,
@@ -219,7 +220,7 @@ class ScreenRecorder(QObject):
                     self.output_file
                 ]
 
-            logging.info(f"FFmpeg: {' '.join(cmd)}")
+            logging.info(tr.t("log.ffmpeg_cmd", cmd=" ".join(cmd)))
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             stderr_lines = []
@@ -232,7 +233,6 @@ class ScreenRecorder(QObject):
 
             for raw_line in proc.stdout:
                 line = raw_line.decode("utf-8", errors="ignore").strip()
-                logging.info(f"FFmpeg progress: {line}")
                 if line.startswith("out_time_us="):
                     try:
                         us = int(line.split("=", 1)[1])
@@ -240,7 +240,7 @@ class ScreenRecorder(QObject):
                         if duration and duration > 0:
                             pct = min(int(current / duration * 100), 99)
                             self.progress.emit(pct)
-                            logging.info(f"FFmpeg: {current:.1f}s / {duration:.1f}s = {pct}%")
+                            logging.info(tr.t("log.ffmpeg_progress", current=current, duration=duration, pct=pct))
                     except (ValueError, ZeroDivisionError):
                         pass
 
@@ -249,17 +249,17 @@ class ScreenRecorder(QObject):
 
             if proc.returncode != 0:
                 stderr_text = "\n".join(stderr_lines)
-                logging.error(f"FFmpeg stderr: {stderr_text}")
+                logging.error(tr.t("log.ffmpeg_stderr", text=stderr_text))
                 raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr_text)
 
             self.progress.emit(100)
-            logging.info(f"Готово: {self.output_file}")
+            logging.info(tr.t("log.mux_done", path=self.output_file))
             self.finished.emit(self.output_file)
         except subprocess.CalledProcessError as e:
-            logging.error(f"FFmpeg: {e.stderr}", exc_info=True)
+            logging.error(tr.t("log.ffmpeg_stderr", text=e.stderr), exc_info=True)
             self.finished.emit("")
         except Exception as e:
-            logging.error(f"Сведение: {e}", exc_info=True)
+            logging.error(tr.t("log.mux_error", error=e), exc_info=True)
             self.finished.emit("")
         finally:
             for f in [self.video_temp, self.audio_temp]:

@@ -3,10 +3,12 @@ import logging
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QCheckBox, QColorDialog
+    QLabel, QPushButton, QCheckBox, QColorDialog, QComboBox
 )
 
 from .hotkey_line_edit import HotkeyLineEdit
+from src import translation_manager as tr
+from src.translation_manager import get_supported_languages
 
 logger = logging.getLogger(__name__)
 
@@ -16,46 +18,58 @@ DEFAULT_COLORS = {
     "saving": [230, 180, 30],
 }
 
-COLOR_LABELS = {
-    "idle": "Ожидание",
-    "recording": "Запись",
-    "saving": "Сохранение",
-}
-
 
 class MainPageWidget(QWidget):
-    """Main settings page: hotkeys, notifications, tray colors."""
+    """Main settings page: hotkeys, notifications, tray colors, language."""
 
     def __init__(self, settings_manager, parent=None):
         super().__init__(parent)
         self.sm = settings_manager
         self.init_ui()
 
+    def _color_label(self, key):
+        return tr.t(f"main.color_{key}")
+
     def init_ui(self):
         layout = QFormLayout(self)
         layout.setSpacing(10)
 
-        hotkey_group = QGroupBox("Горячие клавиши")
+        lang_group = QGroupBox(tr.t("main.language"))
+        lang_layout = QHBoxLayout()
+        self.lang_combo = QComboBox()
+        langs = get_supported_languages()
+        lang_names = {"en": "English", "ru": "Русский"}
+        current_lang = self.sm.get("language", "en")
+        for code in langs:
+            self.lang_combo.addItem(lang_names.get(code, code), code)
+        idx = self.lang_combo.findData(current_lang)
+        if idx >= 0:
+            self.lang_combo.setCurrentIndex(idx)
+        lang_layout.addWidget(self.lang_combo)
+        lang_group.setLayout(lang_layout)
+        layout.addRow(lang_group)
+
+        hotkey_group = QGroupBox(tr.t("main.hotkeys"))
         hotkey_layout = QFormLayout()
 
         hotkeys = self.sm.get("hotkeys", {})
-        self.hotkey_toggle = HotkeyLineEdit(hotkeys.get("toggle_recording", "Ctrl+Shift+R"))
-        hotkey_layout.addRow("Старт/Стоп записи:", self.hotkey_toggle)
+        self.hotkey_toggle = HotkeyLineEdit(hotkeys.get("toggle_recording", "Ctrl+Shift+F"))
+        hotkey_layout.addRow(tr.t("main.hotkey_label"), self.hotkey_toggle)
 
         hotkey_group.setLayout(hotkey_layout)
         layout.addRow(hotkey_group)
 
-        notify_group = QGroupBox("Уведомления")
+        notify_group = QGroupBox(tr.t("main.notifications"))
         notify_layout = QVBoxLayout()
 
-        self.notify_checkbox = QCheckBox("Показывать всплывающие уведомления в трее")
+        self.notify_checkbox = QCheckBox(tr.t("main.show_notifications"))
         self.notify_checkbox.setChecked(self.sm.get("show_notifications", True))
         notify_layout.addWidget(self.notify_checkbox)
 
         notify_group.setLayout(notify_layout)
         layout.addRow(notify_group)
 
-        colors_group = QGroupBox("Цвета иконки в трее")
+        colors_group = QGroupBox(tr.t("main.tray_colors"))
         colors_layout = QHBoxLayout()
 
         tray_colors = self.sm.get("tray_colors", DEFAULT_COLORS)
@@ -63,7 +77,7 @@ class MainPageWidget(QWidget):
 
         for key in ("idle", "recording", "saving"):
             rgb = tray_colors.get(key, DEFAULT_COLORS[key])
-            btn = QPushButton(COLOR_LABELS[key])
+            btn = QPushButton(self._color_label(key))
             btn.setFixedHeight(30)
             btn.setStyleSheet(f"background-color: rgb({rgb[0]},{rgb[1]},{rgb[2]}); color: white; border: 1px solid #888;")
             btn.clicked.connect(lambda checked, k=key, b=btn: self._pick_color(k, b))
@@ -78,7 +92,7 @@ class MainPageWidget(QWidget):
         current_rgb = tray_colors.get(key, DEFAULT_COLORS[key])
         current_color = QColor(current_rgb[0], current_rgb[1], current_rgb[2])
 
-        color = QColorDialog.getColor(current_color, self, f"Выберите цвет: {COLOR_LABELS[key]}")
+        color = QColorDialog.getColor(current_color, self, tr.t("main.color_dialog", state=self._color_label(key)))
         if color.isValid():
             rgb = [color.red(), color.green(), color.blue()]
             tray_colors[key] = rgb
@@ -89,6 +103,7 @@ class MainPageWidget(QWidget):
 
     def get_settings(self):
         return {
+            "language": self.lang_combo.currentData(),
             "hotkeys": {
                 "toggle_recording": self.hotkey_toggle.text(),
             },

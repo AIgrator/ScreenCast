@@ -12,30 +12,11 @@ from PyQt6.QtWidgets import (
     QToolButton, QApplication
 )
 
+from src import translation_manager as tr
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PATTERN = "%Y%m%d-%H%M%S"
-
-TOKEN_HELP = (
-    "Формат имени файла (strftime + {n}):\n\n"
-    "  %Y  — год (2026)\n"
-    "  %m  — месяц (01–12)\n"
-    "  %d  — день (01–31)\n"
-    "  %H  — час (00–23)\n"
-    "  %M  — минута (00–59)\n"
-    "  %S  — секунда (00–59)\n"
-    "  %a  — день недели (Mon, Tue...)\n"
-    "  %b  — месяц (Jan, Feb...)\n\n"
-    "  {n}     — номер (авто: 1, 2, 3...)\n"
-    "  {n:03}  — номер с ведущими нулями (001, 002...)\n"
-    "  {n:04}  — (0001, 0002...)\n\n"
-    "Примеры:\n"
-    "  %Y%m%d-%H%M%S      →  20260903-171530\n"
-    "  %Y-%m-%d_%H-%M-%S  →  2026-09-03_17-15-30\n"
-    "  rec_{n:03}          →  rec_001, rec_002...\n"
-    "  lecture_%Y%m%d      →  lecture_20260903\n"
-    "  %b %d %Y {n:02}     →  Sep 03 2026 01"
-)
 
 QUICK_TOKENS = [
     ("%Y%m%d", "%Y%m%d"),
@@ -170,7 +151,7 @@ class FilePageWidget(QWidget):
         layout = QFormLayout(self)
         layout.setSpacing(10)
 
-        dir_group = QGroupBox("Папка для сохранения записей")
+        dir_group = QGroupBox(tr.t("file.output_folder"))
         dir_layout = QHBoxLayout()
 
         self.dir_input = QLineEdit()
@@ -179,7 +160,7 @@ class FilePageWidget(QWidget):
         self.dir_input.textChanged.connect(self._update_preview)
         dir_layout.addWidget(self.dir_input)
 
-        btn_browse = QPushButton("Обзор...")
+        btn_browse = QPushButton(tr.t("file.browse"))
         btn_browse.setFixedWidth(80)
         btn_browse.clicked.connect(self.browse_output_dir)
         dir_layout.addWidget(btn_browse)
@@ -187,23 +168,23 @@ class FilePageWidget(QWidget):
         dir_group.setLayout(dir_layout)
         layout.addRow(dir_group)
 
-        pattern_group = QGroupBox("Шаблон имени файла")
+        pattern_group = QGroupBox(tr.t("file.filename_template"))
         pattern_layout = QVBoxLayout()
 
         pattern_row = QHBoxLayout()
-        pattern_row.addWidget(QLabel("Шаблон:"))
+        pattern_row.addWidget(QLabel(tr.t("file.template")))
         self.pattern_input = QLineEdit()
         self.pattern_input.setText(self.sm.get("filename_pattern", DEFAULT_PATTERN))
         self.pattern_input.textChanged.connect(self._update_preview)
         pattern_row.addWidget(self.pattern_input)
 
-        btn_help = HelpButton(TOKEN_HELP)
+        btn_help = HelpButton(tr.t("token_help"))
         pattern_row.addWidget(btn_help)
 
         pattern_layout.addLayout(pattern_row)
 
         tokens_row = QHBoxLayout()
-        tokens_row.addWidget(QLabel("Вставить:"))
+        tokens_row.addWidget(QLabel(tr.t("file.insert")))
         self.token_combo = QComboBox()
         for label, token in QUICK_TOKENS:
             self.token_combo.addItem(label, token)
@@ -211,11 +192,11 @@ class FilePageWidget(QWidget):
 
         btn_insert = QPushButton("+")
         btn_insert.setFixedWidth(30)
-        btn_insert.setToolTip("Вставить в позицию курсора")
+        btn_insert.setToolTip(tr.t("file.insert_tooltip"))
         btn_insert.clicked.connect(self._insert_token)
         tokens_row.addWidget(btn_insert)
 
-        btn_reset = QPushButton("Сброс")
+        btn_reset = QPushButton(tr.t("file.reset"))
         btn_reset.setFixedWidth(60)
         btn_reset.clicked.connect(lambda: self.pattern_input.setText(DEFAULT_PATTERN))
         tokens_row.addWidget(btn_reset)
@@ -243,13 +224,13 @@ class FilePageWidget(QWidget):
         output_dir = self.dir_input.text()
         try:
             preview = parse_filename_pattern(pattern, output_dir)
-            self.preview_label.setText(f"Пример: {preview}.mp4")
+            self.preview_label.setText(tr.t("file.preview", preview=preview))
         except Exception:
-            self.preview_label.setText("Некорректный шаблон")
+            self.preview_label.setText(tr.t("file.invalid_template"))
 
     def browse_output_dir(self):
         current = self.dir_input.text()
-        directory = QFileDialog.getExistingDirectory(self, "Выберите папку для сохранения", current)
+        directory = QFileDialog.getExistingDirectory(self, tr.t("file.choose_folder"), current)
         if directory:
             self.dir_input.setText(directory)
 

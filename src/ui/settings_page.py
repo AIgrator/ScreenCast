@@ -5,6 +5,8 @@ from PyQt6.QtWidgets import (
     QGroupBox, QFormLayout, QWidget
 )
 
+from src import translation_manager as tr
+
 logger = logging.getLogger(__name__)
 
 RESOLUTION_PRESETS = {
@@ -31,11 +33,11 @@ class SettingsPageWidget(QWidget):
         layout = QFormLayout(self)
         layout.setSpacing(10)
 
-        video_group = QGroupBox("Видео")
+        video_group = QGroupBox(tr.t("quality.video"))
         video_layout = QVBoxLayout(video_group)
 
         res_row = QHBoxLayout()
-        res_row.addWidget(QLabel("Разрешение:"))
+        res_row.addWidget(QLabel(tr.t("quality.resolution")))
         self.res_combo = QComboBox()
         for key, preset in RESOLUTION_PRESETS.items():
             self.res_combo.addItem(preset["label"], key)
@@ -46,7 +48,7 @@ class SettingsPageWidget(QWidget):
         video_layout.addLayout(res_row)
 
         fps_row = QHBoxLayout()
-        fps_row.addWidget(QLabel("Частота кадров:"))
+        fps_row.addWidget(QLabel(tr.t("quality.fps")))
         self.fps_combo = QComboBox()
         for fps in FPS_OPTIONS:
             self.fps_combo.addItem(f"{fps} FPS", fps)
@@ -57,7 +59,7 @@ class SettingsPageWidget(QWidget):
         video_layout.addLayout(fps_row)
 
         vbr_row = QHBoxLayout()
-        vbr_row.addWidget(QLabel("Битрейт видео:"))
+        vbr_row.addWidget(QLabel(tr.t("quality.video_bitrate")))
         self.vbitrate_combo = QComboBox()
         for br in VIDEO_BITRATE_OPTIONS:
             self.vbitrate_combo.addItem(f"{br} kbps", br)
@@ -69,11 +71,11 @@ class SettingsPageWidget(QWidget):
 
         layout.addRow(video_group)
 
-        audio_group = QGroupBox("Аудио (приоритет — качество для транскрибации)")
+        audio_group = QGroupBox(tr.t("quality.audio"))
         audio_layout = QVBoxLayout(audio_group)
 
         abr_row = QHBoxLayout()
-        abr_row.addWidget(QLabel("Битрейт аудио:"))
+        abr_row.addWidget(QLabel(tr.t("quality.audio_bitrate")))
         self.abitrate_combo = QComboBox()
         for br in AUDIO_BITRATE_OPTIONS:
             self.abitrate_combo.addItem(f"{br} kbps", br)
@@ -84,7 +86,7 @@ class SettingsPageWidget(QWidget):
         audio_layout.addLayout(abr_row)
 
         asr_row = QHBoxLayout()
-        asr_row.addWidget(QLabel("Частота дискретизации:"))
+        asr_row.addWidget(QLabel(tr.t("quality.sample_rate")))
         self.asr_combo = QComboBox()
         for sr in AUDIO_SAMPLE_RATE_OPTIONS:
             self.asr_combo.addItem(f"{sr} Hz", sr)
