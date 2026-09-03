@@ -136,7 +136,7 @@ class ScreenRecorder(QObject):
         base_name = parse_filename_pattern(pattern, self.output_dir)
 
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        self.video_temp = os.path.join(self.output_dir, f"temp_video_{timestamp}.mp4")
+        self.video_temp = os.path.join(self.output_dir, f"temp_video_{timestamp}.avi")
         self.audio_temp = os.path.join(self.output_dir, f"temp_audio_{timestamp}.wav")
         self.output_file = os.path.join(self.output_dir, f"{base_name}.mp4")
 
@@ -147,6 +147,14 @@ class ScreenRecorder(QObject):
 
     def _record_video(self):
         logging.info("Поток записи видео запущен.")
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetThreadPriority(
+                    ctypes.windll.kernel32.GetCurrentThread(), -1
+                )
+            except Exception:
+                pass
         try:
             with mss.MSS() as sct:
                 if self.monitor_index < len(sct.monitors):
@@ -167,7 +175,7 @@ class ScreenRecorder(QObject):
                 need_resize = (src_w != out_w or src_h != out_h)
                 logging.info(f"Захват монитора #{self.monitor_index}: {src_w}x{src_h} -> {out_w}x{out_h}, {fps} FPS")
 
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
                 writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
 
                 if not writer.isOpened():
@@ -179,10 +187,9 @@ class ScreenRecorder(QObject):
                 while not self.stop_event.is_set():
                     try:
                         img = sct.grab(monitor)
-                        frame = np.array(img)
-                        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                        frame = np.array(img)[:, :, :3]
                         if need_resize:
-                            frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA)
+                            frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         writer.write(frame)
                     except Exception as e:
                         logging.error(f"Ошибка кадра: {e}", exc_info=True)
@@ -217,11 +224,11 @@ class ScreenRecorder(QObject):
 
             logging.info(f"Loopback: {sp.name}, каналов {sp.channels}, {samplerate} Hz")
 
-            with mic.recorder(samplerate=samplerate, channels=sp.channels, blocksize=1024) as recorder, \
+            with mic.recorder(samplerate=samplerate, channels=sp.channels, blocksize=4096) as recorder, \
                  sf.SoundFile(self.audio_temp, mode='w', samplerate=samplerate, channels=out_channels, subtype='PCM_16') as file:
                 while not self.stop_event.is_set():
                     try:
-                        data = recorder.record(numframes=1024)
+                        data = recorder.record(numframes=4096)
                         if data.shape[1] > 2:
                             data = data[:, :2]
                         file.write(data)
