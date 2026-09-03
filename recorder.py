@@ -319,7 +319,7 @@ class ScreenRecorder(QObject):
                         if duration and duration > 0:
                             pct = min(int(current / duration * 100), 99)
                             self.progress.emit(pct)
-                            logging.info(f"FFmpeg progress: {current:.1f}s / {duration:.1f}s = {pct}%")
+                            logging.info(f"FFmpeg: {current:.1f}s / {duration:.1f}s = {pct}%")
                     except (ValueError, ZeroDivisionError):
                         pass
 
@@ -417,16 +417,18 @@ class TrayApp(QObject):
         }
         tray_colors = self.sm.get("tray_colors", default_colors)
         rgb = tray_colors.get(self._state, default_colors["idle"])
-        painter.setBrush(QColor(rgb[0], rgb[1], rgb[2]))
 
-        painter.setPen(QColor(255, 255, 255, 200))
-        painter.drawEllipse(4, 4, 24, 24)
+        painter.setPen(Qt.PenStyle.NoPen)
 
         if self._state == "saving" and self._save_percent > 0:
-            painter.setPen(QColor(255, 255, 255))
-            font = QFont("Arial", 7, QFont.Weight.Bold)
-            painter.setFont(font)
-            painter.drawText(4, 4, 24, 24, Qt.AlignmentFlag.AlignCenter, f"{self._save_percent}%")
+            painter.setBrush(QColor(80, 80, 80))
+            painter.drawEllipse(4, 4, 24, 24)
+            painter.setBrush(QColor(rgb[0], rgb[1], rgb[2]))
+            span = int(self._save_percent / 100 * 5760)
+            painter.drawPie(4, 4, 24, 24, 90 * 16, -span)
+        else:
+            painter.setBrush(QColor(rgb[0], rgb[1], rgb[2]))
+            painter.drawEllipse(4, 4, 24, 24)
 
         painter.end()
         self.tray_icon.setIcon(QIcon(pixmap))
