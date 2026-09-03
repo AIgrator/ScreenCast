@@ -75,9 +75,11 @@ uv run python recorder.py
 
 ```
 ├── pyproject.toml              # Project config, dependencies
-├── recorder.py                 # Entry point, recording, tray, hotkeys
+├── recorder.py                 # Entry point, TrayApp (tray, menu, UI)
 ├── src/
 │   ├── settings_manager.py     # Settings manager (JSON)
+│   ├── hotkey_manager.py       # Global hotkeys (pynput)
+│   ├── screen_recorder.py      # Screen/audio recording + FFmpeg muxing
 │   └── ui/
 │       ├── settings_dialog.py  # Settings dialog with tabs
 │       ├── settings_page.py    # Quality tab
