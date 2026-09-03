@@ -1,100 +1,95 @@
-# Lecture Recorder
+# ScreenCast
 
-Запись экрана и системного звука в трее Windows. Идеально для записи лекций и онлайн-совещаний.
+Lightweight screen and system audio recorder for Windows. Lives in the system tray, captures any monitor with WASAPI loopback audio, compresses to MP4 via FFmpeg. Hotkeys, customizable icon colors, configurable quality settings.
 
-## Возможности
+## Features
 
-- Запись экрана (любой монитор) с масштабированием (480p / 720p / 1080p)
-- Запись системного звука через WASAPI loopback (динамики, наушники)
-- Сжатие видео+аудио через FFmpeg (H.264 + AAC)
-- Иконка в трее с индикацией состояния:
-  - Синяя — ожидание
-  - Красная — запись
-  - Жёлтая — сохранение на диск
-- Горячая клавиша для старта/остановки (по умолчанию `Ctrl+Shift+R`)
-- Настройки: разрешение, FPS, битрейт видео/аудио, папка сохранения
-- Всплывающие уведомления (можно отключить)
+- Screen recording (any monitor) with resolution scaling (480p / 720p / 1080p)
+- System audio capture via WASAPI loopback (speakers, headphones)
+- Video + audio compression via FFmpeg (H.264 + AAC)
+- System tray icon with state indication:
+  - Blue — idle
+  - Red — recording
+  - Yellow — saving to disk
+- Hotkey to start/stop (default `Ctrl+Shift+R`)
+- Settings: resolution, FPS, video/audio bitrate, output folder
+- Pop-up notifications (can be disabled)
+- Customizable tray icon colors
 
-## Установка
+## Installation
 
-Требуется Python 3.10+ и [uv](https://docs.astral.sh/uv/).
+Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-# Клонировать репозиторий
-git clone https://github.com/your-username/lecture-recorder.git
-cd lecture-recorder
-
-# Установить зависимости
+git clone https://github.com/AIgrator/ScreenCast.git
+cd ScreenCast
 uv sync
-
-# Запустить
 uv run python recorder.py
 ```
 
-## Использование
+## Usage
 
-1. Запустите приложение — появится иконка в трее (синяя)
-2. Нажмите правую кнопку мыши на иконку для меню
-3. Нажмите «Начать запись» или используйте горячую клавишу `Ctrl+Shift+R`
-4. Иконка станет красной — запись идёт
-5. Нажмите горячую клавишу снова — запись остановится, иконка станет жёлтой
-6. После сохранения иконка вернётся к синему цвету
+1. Launch the app — tray icon appears (blue)
+2. Right-click the icon for the menu
+3. Click "Start recording" or use the hotkey `Ctrl+Shift+R`
+4. Icon turns red — recording in progress
+5. Press the hotkey again — recording stops, icon turns yellow
+6. After saving, icon returns to blue
 
-### Меню
+### Menu
 
-- **Начать запись** / **Остановить запись** — toggle записи
-- **Выбрать монитор** — выбор монитора для захвата
-- **Выбрать источник звука** — выбор устройства воспроизведения (WASAPI loopback)
-- **Настройки** — параметры записи и горячих клавиш
-- **Выход** — закрыть приложение
+- **Start recording** / **Stop recording** — toggle recording
+- **Select monitor** — choose which monitor to capture
+- **Select audio source** — choose playback device (WASAPI loopback)
+- **Settings** — recording parameters and hotkeys
+- **Exit** — close the application
 
-### Настройки
+### Settings
 
-#### Главная
-- **Папка для сохранения записей** — куда сохраняются видео (по умолчанию `videos/`)
-- **Горячие клавиши** — настройка комбинации для старта/остановки
-- **Уведомления** — включение/отключение всплывающих сообщений
-- **Цвета иконки в трее** — настройка цветов для состояний: ожидание, запись, сохранение
+#### General
+- **Output folder** — where videos are saved (default `videos/`)
+- **Hotkeys** — configure start/stop key combination
+- **Notifications** — enable/disable pop-up messages
+- **Tray icon colors** — customize colors for idle, recording, saving states
 
-#### Качество
-- **Разрешение** — 480p, 720p, 1080p
-- **Частота кадров** — 10, 15, 20, 25, 30 FPS
-- **Битрейт видео** — 500–5000 kbps
-- **Битрейт аудио** — 128, 192, 256, 320 kbps
-- **Частота дискретизации** — 44100, 48000 Hz
+#### Quality
+- **Resolution** — 480p, 720p, 1080p
+- **Frame rate** — 10, 15, 20, 25, 30 FPS
+- **Video bitrate** — 500–5000 kbps
+- **Audio bitrate** — 128, 192, 256, 320 kbps
+- **Sample rate** — 44100, 48000 Hz
 
-## Структура проекта
+## Project Structure
 
 ```
-student/
-├── pyproject.toml              # Конфигурация проекта, зависимости
-├── recorder.py                 # Точка входа, запись, трея, хоткеи
+├── pyproject.toml              # Project config, dependencies
+├── recorder.py                 # Entry point, recording, tray, hotkeys
 ├── src/
-│   ├── settings_manager.py     # Менеджер настроек (JSON)
+│   ├── settings_manager.py     # Settings manager (JSON)
 │   └── ui/
-│       ├── settings_dialog.py  # Диалог настроек с вкладками
-│       ├── settings_page.py    # Вкладка «Качество»
-│       ├── main_page.py        # Вкладка «Главная»
-│       └── hotkey_line_edit.py # Виджет ввода горячих клавиш
-├── videos/                     # Папка для записей (в .gitignore)
-└── settings.json               # Локальные настройки (в .gitignore)
+│       ├── settings_dialog.py  # Settings dialog with tabs
+│       ├── settings_page.py    # Quality tab
+│       ├── main_page.py        # General tab
+│       └── hotkey_line_edit.py # Hotkey input widget
+├── videos/                     # Recordings folder (gitignored)
+└── settings.json               # Local settings (gitignored)
 ```
 
-## Технологии
+## Tech Stack
 
 - **Python 3.10+**
-- **PyQt6** — GUI, трея, диалоги
-- **mss** — захват экрана
-- **soundcard** — запись системного звука (WASAPI loopback)
-- **opencv-python** — обработка кадров
-- **imageio-ffmpeg** — bundled FFmpeg для сжатия
-- **pynput** — глобальные горячие клавиши
-- **uv** — менеджер пакетов
+- **PyQt6** — GUI, tray, dialogs
+- **mss** — screen capture
+- **soundcard** — system audio recording (WASAPI loopback)
+- **opencv-python** — frame processing
+- **imageio-ffmpeg** — bundled FFmpeg for compression
+- **pynput** — global hotkeys
+- **uv** — package manager
 
-## Запись
+## Output
 
-Записи сохраняются в папку `videos/` в формате `lecture_YYYYMMDD-HHMMSS.mp4`.
+Recordings are saved to the `videos/` folder as `lecture_YYYYMMDD-HHMMSS.mp4`.
 
-## Лицензия
+## License
 
 MIT
