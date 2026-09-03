@@ -16,7 +16,7 @@ from pynput import keyboard
 
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer, Qt
 
 from src.settings_manager import SettingsManager
 from src.ui.settings_dialog import SettingsDialog, RESOLUTION_PRESETS
