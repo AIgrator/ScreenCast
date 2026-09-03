@@ -340,8 +340,10 @@ class TrayApp(QObject):
 
         self.toggle_requested.connect(self.toggle_recording)
         self._save_finished.connect(self._on_save_finished)
+        self.sm.settings_changed.connect(self._on_settings_changed)
         self.hotkey_mgr = HotkeyManager(self.sm, self._on_hotkey_pressed)
 
+        self._update_menu_action()
         self._notify("Lecture Recorder", "Приложение запущено в трее.")
         logging.info("TrayApp запущен.")
 
@@ -364,6 +366,39 @@ class TrayApp(QObject):
         painter.drawEllipse(4, 4, 24, 24)
         painter.end()
         self.tray_icon.setIcon(QIcon(pixmap))
+
+    def _make_circle_icon(self, rgb, size=12):
+        pixmap = QPixmap(size, size)
+        pixmap.fill(QColor("transparent"))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(rgb[0], rgb[1], rgb[2]))
+        painter.setPen(QColor(100, 100, 100))
+        painter.drawEllipse(0, 0, size, size)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _get_state_color(self):
+        default_colors = {
+            "idle": [50, 150, 250],
+            "recording": [220, 50, 50],
+            "saving": [230, 180, 30],
+        }
+        tray_colors = self.sm.get("tray_colors", default_colors)
+        return tray_colors.get(self._state, default_colors[self._state])
+
+    def _update_menu_action(self):
+        texts = {
+            "idle": "Начать запись",
+            "recording": "Остановить запись",
+            "saving": "Сохранение...",
+        }
+        self.action_toggle.setText(texts.get(self._state, "Начать запись"))
+        self.action_toggle.setIcon(self._make_circle_icon(self._get_state_color()))
+
+    def _on_settings_changed(self, new_settings):
+        self.update_tray_icon()
+        self._update_menu_action()
 
     def populate_monitors(self):
         self.menu_monitors.clear()
@@ -430,7 +465,7 @@ class TrayApp(QObject):
             logging.info("Hotkey: остановка записи...")
             self._state = "saving"
             self.update_tray_icon()
-            self.action_toggle.setText("Сохранение...")
+            self._update_menu_action()
             self.action_toggle.setEnabled(False)
             threading.Thread(target=self._stop_and_save, daemon=True).start()
         else:
@@ -446,7 +481,7 @@ class TrayApp(QObject):
             self.recorder.start()
             self._state = "recording"
             self.update_tray_icon()
-            self.action_toggle.setText("Остановить запись")
+            self._update_menu_action()
             self._notify("Запись", "Запись начата")
 
     def _stop_and_save(self):
@@ -458,7 +493,7 @@ class TrayApp(QObject):
     def _on_save_finished(self, filepath):
         self._state = "idle"
         self.update_tray_icon()
-        self.action_toggle.setText("Начать запись")
+        self._update_menu_action()
         self.action_toggle.setEnabled(True)
         if filepath:
             logging.info(f"Запись сохранена: {filepath}")
