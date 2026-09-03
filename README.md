@@ -54,12 +54,11 @@ uv run python recorder.py
 
 #### Path & Filename
 - **Output folder** — where videos are saved (default `videos/`)
-- **Filename pattern** — customizable with tokens:
-  - `{date:YYYYMMDD}` — date (e.g. `20260903`)
-  - `{time:HHmmss}` — time (e.g. `171530`)
-  - `{n}` — auto-incrementing number
-  - `{n:03}` — zero-padded number (e.g. `001`, `002`)
-- Quick-insert dropdown for common patterns
+- **Filename pattern** — strftime format with `{n}` counter:
+  - `%Y` `%m` `%d` `%H` `%M` `%S` `%a` `%b` — standard date/time codes
+  - `{n}` — auto-incrementing number (scans folder for existing files)
+  - `{n:03}` — zero-padded (e.g. `001`, `002`)
+- Quick-insert dropdown for common tokens
 - Live preview of resulting filename
 
 #### Quality

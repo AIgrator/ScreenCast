@@ -1,5 +1,7 @@
+import glob
 import logging
 import os
+import re
 import time
 
 from PyQt6.QtWidgets import (
@@ -9,60 +11,76 @@ from PyQt6.QtWidgets import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PATTERN = "{date:YYYYMMDD}-{time:HHMMSS}"
+DEFAULT_PATTERN = "%Y%m%d-%H%M%S"
 
 TOKEN_HELP = (
-    "Доступные токены:\n"
-    "  {date:Формат}  — дата (strftime)\n"
-    "  {time:Формат}  — время (strftime)\n"
-    "  {n}            — номер (авто)\n"
-    "  {n:ШИРИНА}     — номер с ведущими нулями\n"
-    "\n"
+    "Формат имени файла (strftime + {n}):\n\n"
+    "  %Y  — год (2026)\n"
+    "  %m  — месяц (01–12)\n"
+    "  %d  — день (01–31)\n"
+    "  %H  — час (00–23)\n"
+    "  %M  — минута (00–59)\n"
+    "  %S  — секунда (00–59)\n"
+    "  %a  — день недели (Mon, Tue...)\n"
+    "  %b  — месяц (Jan, Feb...)\n\n"
+    "  {n}     — номер (авто: 1, 2, 3...)\n"
+    "  {n:03}  — номер с ведущими нулями (001, 002...)\n"
+    "  {n:04}  — (0001, 0002...)\n\n"
     "Примеры:\n"
-    "  {date:YYYYMMDD}-{time:HHMMSS}  →  20260903-171530\n"
-    "  {date:YYYY-MM-DD}_{time:HH-mm-ss}  →  2026-09-03_17-15-30\n"
-    "  rec_{n:03}  →  rec_001, rec_002, ...\n"
-    "  lecture_{date:YYYYMMDD}  →  lecture_20260903"
+    "  %Y%m%d-%H%M%S      →  20260903-171530\n"
+    "  %Y-%m-%d_%H-%M-%S  →  2026-09-03_17-15-30\n"
+    "  rec_{n:03}          →  rec_001, rec_002...\n"
+    "  lecture_%Y%m%d      →  lecture_20260903\n"
+    "  %b %d %Y {n:02}     →  Sep 03 2026 01"
 )
 
 QUICK_TOKENS = [
-    ("Дата YYYYMMDD", "{date:YYYYMMDD}"),
-    ("Дата YYYY-MM-DD", "{date:YYYY-MM-DD}"),
-    ("Дата DD.MM.YYYY", "{date:%d.%m.%Y}"),
-    ("Время HHMMSS", "{time:HHMMSS}"),
-    ("Время HH-mm-ss", "{time:%H-%M-%S}"),
-    ("Номер", "{n}"),
-    ("Номер 001", "{n:03}"),
-    ("Номер 0001", "{n:04}"),
+    ("%Y%m%d", "%Y%m%d"),
+    ("%Y-%m-%d", "%Y-%m-%d"),
+    ("%d.%m.%Y", "%d.%m.%Y"),
+    ("%H%M%S", "%H%M%S"),
+    ("%H-%M-%S", "%H-%M-%S"),
+    ("%a, %d %b %Y", "%a, %d %b %Y"),
+    ("{n}", "{n}"),
+    ("{n:03}", "{n:03}"),
+    ("{n:04}", "{n:04}"),
 ]
 
 
-def parse_filename_pattern(pattern, counter):
+def _next_counter(output_dir, pattern):
+    existing = glob.glob(os.path.join(output_dir, "*.mp4"))
+    max_n = 0
+    for fp in existing:
+        basename = os.path.splitext(os.path.basename(fp))[0]
+        m = re.search(r"(\d+)$", basename)
+        if m:
+            try:
+                n = int(m.group(1))
+                if n > max_n:
+                    max_n = n
+            except ValueError:
+                pass
+    return max_n + 1
+
+
+def parse_filename_pattern(pattern, output_dir=None):
     now = time.localtime()
     result = pattern
 
-    import re
+    counter = 1
+    if output_dir and os.path.isdir(output_dir):
+        counter = _next_counter(output_dir, pattern)
 
-    def replace_date(m):
-        fmt = m.group(1)
-        py_fmt = fmt.replace("YYYY", "%Y").replace("MM", "%m").replace("DD", "%d")
-        return time.strftime(py_fmt, now)
-
-    def replace_time(m):
-        fmt = m.group(1)
-        py_fmt = fmt.replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
-        return time.strftime(py_fmt, now)
-
-    def replace_n(m):
+    def _replace_n(m):
         width = m.group(1)
         if width:
             return str(counter).zfill(int(width))
         return str(counter)
 
-    result = re.sub(r"\{date:([^}]+)\}", replace_date, result)
-    result = re.sub(r"\{time:([^}]+)\}", replace_time, result)
-    result = re.sub(r"\{n:(\d+)\}", replace_n, result)
-    result = re.sub(r"\{n\}", replace_n, result)
+    result = re.sub(r"\{n:(\d+)\}", _replace_n, result)
+    result = re.sub(r"\{n\}", _replace_n, result)
+
+    result = time.strftime(result, now)
 
     return result
 
@@ -73,7 +91,6 @@ class FilePageWidget(QWidget):
     def __init__(self, settings_manager, parent=None):
         super().__init__(parent)
         self.sm = settings_manager
-        self._counter = 0
         self.init_ui()
         self._update_preview()
 
@@ -87,6 +104,7 @@ class FilePageWidget(QWidget):
         self.dir_input = QLineEdit()
         self.dir_input.setReadOnly(True)
         self.dir_input.setText(self.sm.get("output_dir", ""))
+        self.dir_input.textChanged.connect(self._update_preview)
         dir_layout.addWidget(self.dir_input)
 
         btn_browse = QPushButton("Обзор...")
@@ -109,7 +127,7 @@ class FilePageWidget(QWidget):
         pattern_layout.addLayout(pattern_row)
 
         tokens_row = QHBoxLayout()
-        tokens_row.addWidget(QLabel("Вставить токен:"))
+        tokens_row.addWidget(QLabel("Вставить:"))
         self.token_combo = QComboBox()
         for label, token in QUICK_TOKENS:
             self.token_combo.addItem(label, token)
@@ -117,14 +135,14 @@ class FilePageWidget(QWidget):
 
         btn_insert = QPushButton("+")
         btn_insert.setFixedWidth(30)
-        btn_insert.setToolTip("Вставить токен в позицию курсора")
+        btn_insert.setToolTip("Вставить в позицию курсора")
         btn_insert.clicked.connect(self._insert_token)
         tokens_row.addWidget(btn_insert)
 
-        btn_reset_pattern = QPushButton("Сброс")
-        btn_reset_pattern.setFixedWidth(60)
-        btn_reset_pattern.clicked.connect(lambda: self.pattern_input.setText(DEFAULT_PATTERN))
-        tokens_row.addWidget(btn_reset_pattern)
+        btn_reset = QPushButton("Сброс")
+        btn_reset.setFixedWidth(60)
+        btn_reset.clicked.connect(lambda: self.pattern_input.setText(DEFAULT_PATTERN))
+        tokens_row.addWidget(btn_reset)
 
         tokens_row.addStretch()
         pattern_layout.addLayout(tokens_row)
@@ -151,8 +169,9 @@ class FilePageWidget(QWidget):
 
     def _update_preview(self):
         pattern = self.pattern_input.text() or DEFAULT_PATTERN
+        output_dir = self.dir_input.text()
         try:
-            preview = parse_filename_pattern(pattern, 1)
+            preview = parse_filename_pattern(pattern, output_dir)
             self.preview_label.setText(f"Пример: {preview}.mp4")
         except Exception:
             self.preview_label.setText("Некорректный шаблон")
