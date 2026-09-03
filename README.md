@@ -5,17 +5,20 @@ Lightweight screen and system audio recorder for Windows. Lives in the system tr
 ## Features
 
 - Screen recording (any monitor) with resolution scaling (480p / 720p / 1080p)
-- System audio capture via WASAPI loopback (speakers, headphones)
+- System audio capture via WASAPI loopback (speakers, headphones — not microphone)
 - Video + audio compression via FFmpeg (H.264 + AAC)
-- System tray icon with state indication:
+- Low CPU usage: MJPG temp codec, array slicing, low thread priority
+- System tray icon with pie arc progress indicator:
   - Blue — idle
   - Red — recording
-  - Yellow — saving to disk
-- Hotkey to start/stop (default `Ctrl+Shift+R`)
-- Customizable filename pattern with tokens: `{date}`, `{time}`, `{n}`
+  - White circle + colored arc — saving to disk (arc fills clockwise)
+- Hotkey to start/stop (default `Ctrl+Shift+F`)
+- Customizable filename pattern with strftime codes: `%Y%m%d-%H%M%S`
+- Auto-incrementing counter `{n}` / `{n:03}` (scans folder for existing files)
 - Settings: resolution, FPS, video/audio bitrate, output folder
 - Pop-up notifications (can be disabled)
-- Customizable tray icon colors
+- Customizable tray icon colors for each state
+- Custom tooltip (positioned left of cursor)
 
 ## Installation
 
@@ -32,9 +35,9 @@ uv run python recorder.py
 
 1. Launch the app — tray icon appears (blue)
 2. Right-click the icon for the menu
-3. Click "Start recording" or use the hotkey `Ctrl+Shift+R`
+3. Click "Start recording" or use the hotkey `Ctrl+Shift+F`
 4. Icon turns red — recording in progress
-5. Press the hotkey again — recording stops, icon turns yellow
+5. Press the hotkey again — recording stops, icon shows white circle with yellow arc
 6. After saving, icon returns to blue
 
 ### Menu
@@ -91,14 +94,16 @@ uv run python recorder.py
 - **PyQt6** — GUI, tray, dialogs
 - **mss** — screen capture
 - **soundcard** — system audio recording (WASAPI loopback)
-- **opencv-python** — frame processing
+- **opencv-python** — frame processing (MJPG temp codec)
 - **imageio-ffmpeg** — bundled FFmpeg for compression
 - **pynput** — global hotkeys
 - **uv** — package manager
 
-## Output
+## Performance
 
-Recordings are saved to the configured output folder. Default filename pattern: `{date:YYYYMMDD}-{time:HHmmss}.mp4` → `20260903-171530.mp4`.
+Recording uses MJPG for the temporary video file (fast writes, no compression overhead). FFmpeg re-encodes to H.264 + AAC during the saving phase. Frame capture uses numpy array slicing instead of `cv2.cvtColor` to avoid unnecessary memory copies. Audio blocksize is set to 4096 frames to reduce callback frequency. On Windows, the video capture thread runs at lower priority to minimize system impact.
+
+Typical CPU usage: 5–8% at 720p 25 FPS.
 
 ## License
 
