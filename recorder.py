@@ -118,6 +118,7 @@ class AudioDevices:
 
 class ScreenRecorder(QObject):
     finished = pyqtSignal(str)
+    progress = pyqtSignal(int)
 
     def __init__(self, output_dir="videos", monitor_index=1, audio_device_id=None, settings_manager=None):
         super().__init__()
@@ -254,6 +255,22 @@ class ScreenRecorder(QObject):
         self.is_recording = False
         self._mux_files()
 
+    def _get_duration(self, filepath):
+        try:
+            ffprobe_bin = imageio_ffmpeg.get_ffmpeg_exe().replace("ffmpeg", "ffprobe")
+            if not os.path.exists(ffprobe_bin):
+                ffprobe_bin = imageio_ffmpeg.get_ffmpeg_exe()
+                cmd = [ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
+                       "-of", "default=noprint_wrappers=1:nokey=1", filepath]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                return float(result.stdout.strip())
+            cmd = [ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
+                   "-of", "default=noprint_wrappers=1:nokey=1", filepath]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return float(result.stdout.strip())
+        except Exception:
+            return None
+
     def _mux_files(self):
         try:
             ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
@@ -261,13 +278,16 @@ class ScreenRecorder(QObject):
             vbr = self.sm.get("video_bitrate", 1500)
             abr = self.sm.get("audio_bitrate", 256)
 
+            duration = self._get_duration(self.video_temp)
+
             if has_audio:
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp, "-i", self.audio_temp,
                     "-c:v", "libx264", "-b:v", f"{vbr}k", "-preset", "veryfast",
                     "-c:a", "aac", "-b:a", f"{abr}k",
-                    "-shortest", self.output_file
+                    "-shortest", "-progress", "pipe:1",
+                    self.output_file
                 ]
             else:
                 logging.warning("Аудио отсутствует, видео без звука.")
@@ -275,15 +295,35 @@ class ScreenRecorder(QObject):
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp,
                     "-c:v", "libx264", "-b:v", f"{vbr}k", "-preset", "veryfast",
+                    "-progress", "pipe:1",
                     self.output_file
                 ]
 
             logging.info(f"FFmpeg: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            for line in proc.stdout:
+                line = line.decode("utf-8", errors="ignore").strip()
+                if line.startswith("out_time_us="):
+                    try:
+                        us = int(line.split("=", 1)[1])
+                        current = us / 1_000_000
+                        if duration and duration > 0:
+                            pct = min(int(current / duration * 100), 99)
+                            self.progress.emit(pct)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+
+            proc.wait()
+            if proc.returncode != 0:
+                stderr = proc.stderr.read().decode("utf-8", errors="ignore")
+                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr)
+
+            self.progress.emit(100)
             logging.info(f"Готово: {self.output_file}")
             self.finished.emit(self.output_file)
         except subprocess.CalledProcessError as e:
-            logging.error(f"FFmpeg: {e.stderr.decode('utf-8', errors='ignore')}", exc_info=True)
+            logging.error(f"FFmpeg: {e.stderr}", exc_info=True)
             self.finished.emit("")
         except Exception as e:
             logging.error(f"Сведение: {e}", exc_info=True)
@@ -312,10 +352,7 @@ class TrayApp(QObject):
         self.selected_audio_device = self.sm.get("selected_audio_device")
         self.recorder = None
         self._state = "idle"  # idle | recording | saving
-        self._save_seconds = 0
-        self._save_timer = QTimer()
-        self._save_timer.setInterval(1000)
-        self._save_timer.timeout.connect(self._on_save_tick)
+        self._save_percent = 0
 
         self.tray_icon = QSystemTrayIcon()
         self.update_tray_icon()
@@ -373,11 +410,11 @@ class TrayApp(QObject):
         painter.setPen(QColor(255, 255, 255, 200))
         painter.drawEllipse(4, 4, 24, 24)
 
-        if self._state == "saving" and self._save_seconds > 0:
+        if self._state == "saving" and self._save_percent > 0:
             painter.setPen(QColor(255, 255, 255))
-            font = QFont("Arial", 8, QFont.Weight.Bold)
+            font = QFont("Arial", 7, QFont.Weight.Bold)
             painter.setFont(font)
-            painter.drawText(4, 4, 24, 24, Qt.AlignmentFlag.AlignCenter, str(self._save_seconds))
+            painter.drawText(4, 4, 24, 24, Qt.AlignmentFlag.AlignCenter, f"{self._save_percent}%")
 
         painter.end()
         self.tray_icon.setIcon(QIcon(pixmap))
@@ -479,8 +516,7 @@ class TrayApp(QObject):
         if self._state == "recording":
             logging.info("Hotkey: остановка записи...")
             self._state = "saving"
-            self._save_seconds = 0
-            self._save_timer.start()
+            self._save_percent = 0
             self.update_tray_icon()
             self._update_menu_action()
             self.action_toggle.setEnabled(False)
@@ -495,6 +531,7 @@ class TrayApp(QObject):
                 settings_manager=self.sm,
             )
             self.recorder.finished.connect(self._on_mux_finished)
+            self.recorder.progress.connect(self._on_save_progress)
             self.recorder.start()
             self._state = "recording"
             self.update_tray_icon()
@@ -504,16 +541,15 @@ class TrayApp(QObject):
     def _stop_and_save(self):
         self.recorder.stop()
 
-    def _on_save_tick(self):
-        self._save_seconds += 1
+    def _on_save_progress(self, percent):
+        self._save_percent = percent
         self.update_tray_icon()
 
     def _on_mux_finished(self, filepath):
         self._save_finished.emit(filepath)
 
     def _on_save_finished(self, filepath):
-        self._save_timer.stop()
-        self._save_seconds = 0
+        self._save_percent = 0
         self._state = "idle"
         self.update_tray_icon()
         self._update_menu_action()
