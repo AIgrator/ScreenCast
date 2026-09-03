@@ -12,6 +12,7 @@ class SettingsManager(QObject):
         "hotkeys": {
             "toggle_recording": "Ctrl+Shift+R",
         },
+        "show_notifications": True,
         "video_resolution": "720p",
         "video_fps": 15,
         "video_bitrate": 1500,

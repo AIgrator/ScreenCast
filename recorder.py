@@ -342,6 +342,7 @@ class TrayApp(QObject):
         self._save_finished.connect(self._on_save_finished)
         self.hotkey_mgr = HotkeyManager(self.sm, self._on_hotkey_pressed)
 
+        self._notify("Lecture Recorder", "Приложение запущено в трее.")
         logging.info("TrayApp запущен.")
 
     def update_tray_icon(self):
@@ -407,7 +408,11 @@ class TrayApp(QObject):
     def open_settings(self):
         dlg = SettingsDialog(self.sm)
         if dlg.exec():
-            pass
+            self._notify("Настройки", "Настройки сохранены.")
+
+    def _notify(self, title, message, icon=QSystemTrayIcon.MessageIcon.Information, duration=2000):
+        if self.sm.get("show_notifications", True):
+            self.tray_icon.showMessage(title, message, icon, duration)
 
     def _on_hotkey_pressed(self):
         self.toggle_requested.emit()
@@ -438,6 +443,7 @@ class TrayApp(QObject):
             self._state = "recording"
             self.update_tray_icon()
             self.action_toggle.setText("Остановить запись")
+            self._notify("Запись", "Запись начата")
 
     def _stop_and_save(self):
         self.recorder.stop()
@@ -452,8 +458,10 @@ class TrayApp(QObject):
         self.action_toggle.setEnabled(True)
         if filepath:
             logging.info(f"Запись сохранена: {filepath}")
+            self._notify("Запись завершена", f"Файл сохранён:\n{filepath}", duration=4000)
         else:
             logging.error("Не удалось свести файлы")
+            self._notify("Ошибка", "Не удалось свести файлы", QSystemTrayIcon.MessageIcon.Warning, 3000)
 
     def quit_app(self):
         if self.recorder and self.recorder.is_recording:

@@ -3,7 +3,7 @@ import os
 
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QLineEdit, QFileDialog
+    QLabel, QPushButton, QLineEdit, QFileDialog, QCheckBox
 )
 
 from .hotkey_line_edit import HotkeyLineEdit
@@ -49,6 +49,16 @@ class MainPageWidget(QWidget):
         hotkey_group.setLayout(hotkey_layout)
         layout.addRow(hotkey_group)
 
+        notify_group = QGroupBox("Уведомления")
+        notify_layout = QVBoxLayout()
+
+        self.notify_checkbox = QCheckBox("Показывать всплывающие уведомления в трее")
+        self.notify_checkbox.setChecked(self.sm.get("show_notifications", True))
+        notify_layout.addWidget(self.notify_checkbox)
+
+        notify_group.setLayout(notify_layout)
+        layout.addRow(notify_group)
+
     def browse_output_dir(self):
         current = self.dir_input.text()
         directory = QFileDialog.getExistingDirectory(self, "Выберите папку для сохранения", current)
@@ -61,4 +71,5 @@ class MainPageWidget(QWidget):
             "hotkeys": {
                 "toggle_recording": self.hotkey_toggle.text(),
             },
+            "show_notifications": self.notify_checkbox.isChecked(),
         }
