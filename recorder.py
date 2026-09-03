@@ -421,7 +421,7 @@ class TrayApp(QObject):
         painter.setPen(Qt.PenStyle.NoPen)
 
         if self._state == "saving" and self._save_percent > 0:
-            painter.setBrush(QColor(80, 80, 80))
+            painter.setBrush(QColor(255, 255, 255))
             painter.drawEllipse(4, 4, 24, 24)
             painter.setBrush(QColor(rgb[0], rgb[1], rgb[2]))
             span = int(self._save_percent / 100 * 5760)
