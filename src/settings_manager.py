@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 class SettingsManager(QObject):
     DEFAULTS = {
         "output_dir": os.path.join(os.getcwd(), "videos"),
+        "filename_pattern": "{date:YYYYMMDD}-{time:HHMMSS}",
         "hotkeys": {
             "toggle_recording": "Ctrl+Shift+R",
         },

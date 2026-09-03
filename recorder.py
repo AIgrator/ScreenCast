@@ -20,6 +20,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 from src.settings_manager import SettingsManager
 from src.ui.settings_dialog import SettingsDialog, RESOLUTION_PRESETS
+from src.ui.file_page import parse_filename_pattern
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="soundcard")
 
@@ -118,7 +119,7 @@ class AudioDevices:
 class ScreenRecorder(QObject):
     finished = pyqtSignal(str)
 
-    def __init__(self, output_dir="videos", monitor_index=1, audio_device_id=None, settings_manager=None):
+    def __init__(self, output_dir="videos", monitor_index=1, audio_device_id=None, settings_manager=None, file_counter=0):
         super().__init__()
         self.output_dir = output_dir
         self.monitor_index = monitor_index
@@ -130,10 +131,13 @@ class ScreenRecorder(QObject):
         except Exception as e:
             logging.error(f"Ошибка создания папки {self.output_dir}: {e}", exc_info=True)
 
+        pattern = self.sm.get("filename_pattern", "{date:YYYYMMDD}-{time:HHMMSS}") if self.sm else "{date:YYYYMMDD}-{time:HHMMSS}"
+        base_name = parse_filename_pattern(pattern, file_counter)
+
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         self.video_temp = os.path.join(self.output_dir, f"temp_video_{timestamp}.mp4")
         self.audio_temp = os.path.join(self.output_dir, f"temp_audio_{timestamp}.wav")
-        self.output_file = os.path.join(self.output_dir, f"lecture_{timestamp}.mp4")
+        self.output_file = os.path.join(self.output_dir, f"{base_name}.mp4")
 
         self.stop_event = threading.Event()
         self.video_thread = None
@@ -308,6 +312,7 @@ class TrayApp(QObject):
         self.selected_audio_device = self.sm.get("selected_audio_device")
         self.recorder = None
         self._state = "idle"  # idle | recording | saving
+        self._file_counter = 0
 
         self.tray_icon = QSystemTrayIcon()
         self.update_tray_icon()
@@ -471,11 +476,13 @@ class TrayApp(QObject):
         else:
             logging.info("Hotkey: запуск записи...")
             output_dir = self.sm.get("output_dir", os.path.join(os.getcwd(), "videos"))
+            self._file_counter += 1
             self.recorder = ScreenRecorder(
                 output_dir=output_dir,
                 monitor_index=self.selected_monitor,
                 audio_device_id=self.selected_audio_device,
-                settings_manager=self.sm
+                settings_manager=self.sm,
+                file_counter=self._file_counter,
             )
             self.recorder.finished.connect(self._on_mux_finished)
             self.recorder.start()

@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
 
 from .main_page import MainPageWidget
 from .settings_page import SettingsPageWidget
+from .file_page import FilePageWidget
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,8 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.sm = settings_manager
         self.setWindowTitle("Настройки")
-        self.setMinimumWidth(480)
-        self.setMinimumHeight(380)
+        self.setMinimumWidth(520)
+        self.setMinimumHeight(420)
         self.init_ui()
 
     def init_ui(self):
@@ -34,9 +35,11 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
 
         self.main_page = MainPageWidget(self.sm)
+        self.file_page = FilePageWidget(self.sm)
         self.settings_page = SettingsPageWidget(self.sm)
 
         tabs.addTab(self.main_page, "Главная")
+        tabs.addTab(self.file_page, "Путь и имя файла")
         tabs.addTab(self.settings_page, "Качество")
 
         layout.addWidget(tabs)
@@ -54,6 +57,7 @@ class SettingsDialog(QDialog):
     def on_save(self):
         settings = {}
         settings.update(self.main_page.get_settings())
+        settings.update(self.file_page.get_settings())
         settings.update(self.settings_page.get_settings())
         self.sm.set_many(settings)
         self.settings_saved.emit()
@@ -62,5 +66,6 @@ class SettingsDialog(QDialog):
     def get_settings(self):
         settings = {}
         settings.update(self.main_page.get_settings())
+        settings.update(self.file_page.get_settings())
         settings.update(self.settings_page.get_settings())
         return settings
