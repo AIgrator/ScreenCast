@@ -279,6 +279,7 @@ class ScreenRecorder(QObject):
             abr = self.sm.get("audio_bitrate", 256)
 
             duration = self._get_duration(self.video_temp)
+            logging.info(f"Длительность видео: {duration} сек")
 
             if has_audio:
                 cmd = [
@@ -302,8 +303,17 @@ class ScreenRecorder(QObject):
             logging.info(f"FFmpeg: {' '.join(cmd)}")
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            for line in proc.stdout:
-                line = line.decode("utf-8", errors="ignore").strip()
+            stderr_lines = []
+            def read_stderr():
+                for line in proc.stderr:
+                    stderr_lines.append(line.decode("utf-8", errors="ignore").strip())
+
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+            stderr_thread.start()
+
+            for raw_line in proc.stdout:
+                line = raw_line.decode("utf-8", errors="ignore").strip()
+                logging.info(f"FFmpeg progress: {line}")
                 if line.startswith("out_time_us="):
                     try:
                         us = int(line.split("=", 1)[1])
@@ -311,13 +321,17 @@ class ScreenRecorder(QObject):
                         if duration and duration > 0:
                             pct = min(int(current / duration * 100), 99)
                             self.progress.emit(pct)
+                            logging.info(f"FFmpeg progress: {current:.1f}s / {duration:.1f}s = {pct}%")
                     except (ValueError, ZeroDivisionError):
                         pass
 
             proc.wait()
+            stderr_thread.join(timeout=5)
+
             if proc.returncode != 0:
-                stderr = proc.stderr.read().decode("utf-8", errors="ignore")
-                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr)
+                stderr_text = "\n".join(stderr_lines)
+                logging.error(f"FFmpeg stderr: {stderr_text}")
+                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr_text)
 
             self.progress.emit(100)
             logging.info(f"Готово: {self.output_file}")
