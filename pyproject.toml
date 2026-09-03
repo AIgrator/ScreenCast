@@ -1,7 +1,7 @@
 [project]
 name = "student"
 version = "0.1.0"
-description = "Add your description here"
+description = "Запись экрана и системного звука в трее Windows"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
