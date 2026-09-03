@@ -15,8 +15,8 @@ import imageio_ffmpeg
 from pynput import keyboard
 
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
 from src.settings_manager import SettingsManager
 from src.ui.settings_dialog import SettingsDialog, RESOLUTION_PRESETS
@@ -312,6 +312,10 @@ class TrayApp(QObject):
         self.selected_audio_device = self.sm.get("selected_audio_device")
         self.recorder = None
         self._state = "idle"  # idle | recording | saving
+        self._save_seconds = 0
+        self._save_timer = QTimer()
+        self._save_timer.setInterval(1000)
+        self._save_timer.timeout.connect(self._on_save_tick)
 
         self.tray_icon = QSystemTrayIcon()
         self.update_tray_icon()
@@ -368,6 +372,13 @@ class TrayApp(QObject):
 
         painter.setPen(QColor(255, 255, 255, 200))
         painter.drawEllipse(4, 4, 24, 24)
+
+        if self._state == "saving" and self._save_seconds > 0:
+            painter.setPen(QColor(255, 255, 255))
+            font = QFont("Arial", 8, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.drawText(4, 4, 24, 24, Qt.AlignmentFlag.AlignCenter, str(self._save_seconds))
+
         painter.end()
         self.tray_icon.setIcon(QIcon(pixmap))
 
@@ -468,6 +479,8 @@ class TrayApp(QObject):
         if self._state == "recording":
             logging.info("Hotkey: остановка записи...")
             self._state = "saving"
+            self._save_seconds = 0
+            self._save_timer.start()
             self.update_tray_icon()
             self._update_menu_action()
             self.action_toggle.setEnabled(False)
@@ -491,10 +504,16 @@ class TrayApp(QObject):
     def _stop_and_save(self):
         self.recorder.stop()
 
+    def _on_save_tick(self):
+        self._save_seconds += 1
+        self.update_tray_icon()
+
     def _on_mux_finished(self, filepath):
         self._save_finished.emit(filepath)
 
     def _on_save_finished(self, filepath):
+        self._save_timer.stop()
+        self._save_seconds = 0
         self._state = "idle"
         self.update_tray_icon()
         self._update_menu_action()
