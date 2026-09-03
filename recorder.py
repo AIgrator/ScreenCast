@@ -295,6 +295,7 @@ class ScreenRecorder(QObject):
 
 class TrayApp(QObject):
     toggle_requested = pyqtSignal()
+    _save_finished = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -306,10 +307,10 @@ class TrayApp(QObject):
         self.selected_monitor = self.sm.get("selected_monitor", 1)
         self.selected_audio_device = self.sm.get("selected_audio_device")
         self.recorder = None
-        self._toggle_lock = threading.Lock()
+        self._state = "idle"  # idle | recording | saving
 
         self.tray_icon = QSystemTrayIcon()
-        self.update_tray_icon(is_recording=False)
+        self.update_tray_icon()
 
         self.menu = QMenu()
 
@@ -338,23 +339,22 @@ class TrayApp(QObject):
         self.tray_icon.show()
 
         self.toggle_requested.connect(self.toggle_recording)
+        self._save_finished.connect(self._on_save_finished)
         self.hotkey_mgr = HotkeyManager(self.sm, self._on_hotkey_pressed)
 
-        self.tray_icon.showMessage(
-            "Lecture Recorder",
-            "Приложение запущено в трее.",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000
-        )
         logging.info("TrayApp запущен.")
 
-    def update_tray_icon(self, is_recording=False):
+    def update_tray_icon(self):
         pixmap = QPixmap(32, 32)
         pixmap.fill(QColor("transparent"))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(220, 50, 50) if is_recording else QColor(50, 150, 250)
-        painter.setBrush(color)
+        colors = {
+            "idle": QColor(50, 150, 250),
+            "recording": QColor(220, 50, 50),
+            "saving": QColor(230, 180, 30),
+        }
+        painter.setBrush(colors.get(self._state, colors["idle"]))
         painter.setPen(QColor(255, 255, 255, 200))
         painter.drawEllipse(4, 4, 24, 24)
         painter.end()
@@ -407,47 +407,53 @@ class TrayApp(QObject):
     def open_settings(self):
         dlg = SettingsDialog(self.sm)
         if dlg.exec():
-            self.tray_icon.showMessage(
-                "Настройки сохранены",
-                "Настройки обновлены.",
-                QSystemTrayIcon.MessageIcon.Information,
-                1500
-            )
+            pass
 
     def _on_hotkey_pressed(self):
         self.toggle_requested.emit()
 
     def toggle_recording(self):
-        with self._toggle_lock:
-            if self.recorder and self.recorder.is_recording:
-                logging.info("Hotkey: остановка записи...")
-                self.action_toggle.setText("Останавливается...")
-                self.action_toggle.setEnabled(False)
-                self.recorder.stop()
-                self.on_recording_finished(self.recorder.output_file)
-            else:
-                logging.info("Hotkey: запуск записи...")
-                output_dir = self.sm.get("output_dir", os.path.join(os.getcwd(), "videos"))
-                self.recorder = ScreenRecorder(
-                    output_dir=output_dir,
-                    monitor_index=self.selected_monitor,
-                    audio_device_id=self.selected_audio_device,
-                    settings_manager=self.sm
-                )
-                self.recorder.finished.connect(self.on_recording_finished)
-                self.recorder.start()
-                self.update_tray_icon(is_recording=True)
-                self.action_toggle.setText("Остановить запись")
-                self.tray_icon.showMessage("Запись", "Запись начата", QSystemTrayIcon.MessageIcon.Information, 2000)
+        if self._state == "saving":
+            logging.info("Hotkey: идёт сохранение, игнорируем.")
+            return
 
-    def on_recording_finished(self, filepath):
-        self.update_tray_icon(is_recording=False)
+        if self._state == "recording":
+            logging.info("Hotkey: остановка записи...")
+            self._state = "saving"
+            self.update_tray_icon()
+            self.action_toggle.setText("Сохранение...")
+            self.action_toggle.setEnabled(False)
+            threading.Thread(target=self._stop_and_save, daemon=True).start()
+        else:
+            logging.info("Hotkey: запуск записи...")
+            output_dir = self.sm.get("output_dir", os.path.join(os.getcwd(), "videos"))
+            self.recorder = ScreenRecorder(
+                output_dir=output_dir,
+                monitor_index=self.selected_monitor,
+                audio_device_id=self.selected_audio_device,
+                settings_manager=self.sm
+            )
+            self.recorder.finished.connect(self._on_mux_finished)
+            self.recorder.start()
+            self._state = "recording"
+            self.update_tray_icon()
+            self.action_toggle.setText("Остановить запись")
+
+    def _stop_and_save(self):
+        self.recorder.stop()
+
+    def _on_mux_finished(self, filepath):
+        self._save_finished.emit(filepath)
+
+    def _on_save_finished(self, filepath):
+        self._state = "idle"
+        self.update_tray_icon()
         self.action_toggle.setText("Начать запись")
         self.action_toggle.setEnabled(True)
         if filepath:
-            self.tray_icon.showMessage("Запись завершена", f"Файл:\n{filepath}", QSystemTrayIcon.MessageIcon.Information, 4000)
+            logging.info(f"Запись сохранена: {filepath}")
         else:
-            self.tray_icon.showMessage("Ошибка", "Не удалось свести файлы", QSystemTrayIcon.MessageIcon.Warning, 3000)
+            logging.error("Не удалось свести файлы")
 
     def quit_app(self):
         if self.recorder and self.recorder.is_recording:
