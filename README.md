@@ -12,6 +12,7 @@ Lightweight screen and system audio recorder for Windows. Lives in the system tr
   - Red — recording
   - Yellow — saving to disk
 - Hotkey to start/stop (default `Ctrl+Shift+R`)
+- Customizable filename pattern with tokens: `{date}`, `{time}`, `{n}`
 - Settings: resolution, FPS, video/audio bitrate, output folder
 - Pop-up notifications (can be disabled)
 - Customizable tray icon colors
@@ -47,10 +48,19 @@ uv run python recorder.py
 ### Settings
 
 #### General
-- **Output folder** — where videos are saved (default `videos/`)
 - **Hotkeys** — configure start/stop key combination
 - **Notifications** — enable/disable pop-up messages
 - **Tray icon colors** — customize colors for idle, recording, saving states
+
+#### Path & Filename
+- **Output folder** — where videos are saved (default `videos/`)
+- **Filename pattern** — customizable with tokens:
+  - `{date:YYYYMMDD}` — date (e.g. `20260903`)
+  - `{time:HHmmss}` — time (e.g. `171530`)
+  - `{n}` — auto-incrementing number
+  - `{n:03}` — zero-padded number (e.g. `001`, `002`)
+- Quick-insert dropdown for common patterns
+- Live preview of resulting filename
 
 #### Quality
 - **Resolution** — 480p, 720p, 1080p
@@ -70,6 +80,7 @@ uv run python recorder.py
 │       ├── settings_dialog.py  # Settings dialog with tabs
 │       ├── settings_page.py    # Quality tab
 │       ├── main_page.py        # General tab
+│       ├── file_page.py        # Path & Filename tab
 │       └── hotkey_line_edit.py # Hotkey input widget
 ├── videos/                     # Recordings folder (gitignored)
 └── settings.json               # Local settings (gitignored)
@@ -88,7 +99,7 @@ uv run python recorder.py
 
 ## Output
 
-Recordings are saved to the `videos/` folder as `lecture_YYYYMMDD-HHMMSS.mp4`.
+Recordings are saved to the configured output folder. Default filename pattern: `{date:YYYYMMDD}-{time:HHmmss}.mp4` → `20260903-171530.mp4`.
 
 ## License
 
