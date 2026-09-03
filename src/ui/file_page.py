@@ -7,7 +7,7 @@ import time
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QGroupBox, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QLineEdit, QFileDialog, QComboBox,
-    QToolButton
+    QToolButton, QToolTip
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,19 @@ QUICK_TOKENS = [
     ("{n:03}", "{n:03}"),
     ("{n:04}", "{n:04}"),
 ]
+
+
+class HelpButton(QToolButton):
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+        self.setText("?")
+        self.setFixedSize(22, 22)
+        self._tooltip_text = text
+        self.setStyleSheet("QToolButton { font-weight: bold; border: 1px solid #888; border-radius: 10px; }")
+
+    def enterEvent(self, event):
+        pos = self.mapToGlobal(self.rect().center())
+        QToolTip.showText(pos, self._tooltip_text, self)
 
 
 def _next_counter(output_dir, pattern):
@@ -126,11 +139,7 @@ class FilePageWidget(QWidget):
         self.pattern_input.textChanged.connect(self._update_preview)
         pattern_row.addWidget(self.pattern_input)
 
-        btn_help = QToolButton()
-        btn_help.setText("?")
-        btn_help.setFixedSize(22, 22)
-        btn_help.setToolTip(TOKEN_HELP)
-        btn_help.setStyleSheet("QToolButton { font-weight: bold; border: 1px solid #888; border-radius: 10px; }")
+        btn_help = HelpButton(TOKEN_HELP)
         pattern_row.addWidget(btn_help)
 
         pattern_layout.addLayout(pattern_row)

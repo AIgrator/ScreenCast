@@ -26,7 +26,6 @@ class SettingsDialog(QDialog):
         self.sm = settings_manager
         self.setWindowTitle("Настройки")
         self.setMinimumWidth(520)
-        self.setMinimumHeight(420)
         self.init_ui()
 
     def init_ui(self):
