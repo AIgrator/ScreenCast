@@ -9,6 +9,7 @@ dependencies = [
     "mss>=9.0.1",
     "numpy>=2.0.0",
     "opencv-python-headless>=4.10.0.84",
+    "pynput>=1.7.6",
     "pyqt6>=6.8.0",
     "soundcard>=0.4.3",
     "soundfile>=0.13.1",

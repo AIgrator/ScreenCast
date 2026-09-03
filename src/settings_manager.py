@@ -8,6 +8,10 @@ logger = logging.getLogger(__name__)
 
 class SettingsManager(QObject):
     DEFAULTS = {
+        "output_dir": os.path.join(os.getcwd(), "videos"),
+        "hotkeys": {
+            "toggle_recording": "Ctrl+Shift+R",
+        },
         "video_resolution": "720p",
         "video_fps": 15,
         "video_bitrate": 1500,
