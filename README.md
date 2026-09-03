@@ -18,7 +18,6 @@ Lightweight screen and system audio recorder for Windows. Lives in the system tr
 - Settings: resolution, FPS, video/audio bitrate, output folder
 - Pop-up notifications (can be disabled)
 - Customizable tray icon colors for each state
-- Custom tooltip (positioned left of cursor)
 - Internationalization: English (default) and Russian, switchable in settings
 
 ## Installation
