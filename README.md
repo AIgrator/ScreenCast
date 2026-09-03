@@ -19,6 +19,7 @@ Lightweight screen and system audio recorder for Windows. Lives in the system tr
 - Pop-up notifications (can be disabled)
 - Customizable tray icon colors for each state
 - Custom tooltip (positioned left of cursor)
+- Internationalization: English (default) and Russian, switchable in settings
 
 ## Installation
 
@@ -37,7 +38,7 @@ uv run python recorder.py
 2. Right-click the icon for the menu
 3. Click "Start recording" or use the hotkey `Ctrl+Shift+F`
 4. Icon turns red — recording in progress
-5. Press the hotkey again — recording stops, icon shows white circle with yellow arc
+5. Press the hotkey again — recording stops, icon shows white circle with colored arc
 6. After saving, icon returns to blue
 
 ### Menu
@@ -51,6 +52,7 @@ uv run python recorder.py
 ### Settings
 
 #### General
+- **Language** — switch between English and Russian (instant, no restart)
 - **Hotkeys** — configure start/stop key combination
 - **Notifications** — enable/disable pop-up messages
 - **Tray icon colors** — customize colors for idle, recording, saving states
@@ -78,14 +80,18 @@ uv run python recorder.py
 ├── recorder.py                 # Entry point, TrayApp (tray, menu, UI)
 ├── src/
 │   ├── settings_manager.py     # Settings manager (JSON)
+│   ├── translation_manager.py  # i18n translation system
 │   ├── hotkey_manager.py       # Global hotkeys (pynput)
 │   ├── screen_recorder.py      # Screen/audio recording + FFmpeg muxing
 │   └── ui/
 │       ├── settings_dialog.py  # Settings dialog with tabs
 │       ├── settings_page.py    # Quality tab
-│       ├── main_page.py        # General tab
+│       ├── main_page.py        # General tab (hotkeys, notifications, colors, language)
 │       ├── file_page.py        # Path & Filename tab
 │       └── hotkey_line_edit.py # Hotkey input widget
+├── translations/
+│   ├── en.json                 # English translations
+│   └── ru.json                 # Russian translations
 ├── videos/                     # Recordings folder (gitignored)
 └── settings.json               # Local settings (gitignored)
 ```
@@ -109,4 +115,4 @@ Typical CPU usage: 5–8% at 720p 25 FPS.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
