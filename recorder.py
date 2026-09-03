@@ -350,12 +350,16 @@ class TrayApp(QObject):
         pixmap.fill(QColor("transparent"))
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        colors = {
-            "idle": QColor(50, 150, 250),
-            "recording": QColor(220, 50, 50),
-            "saving": QColor(230, 180, 30),
+
+        default_colors = {
+            "idle": [50, 150, 250],
+            "recording": [220, 50, 50],
+            "saving": [230, 180, 30],
         }
-        painter.setBrush(colors.get(self._state, colors["idle"]))
+        tray_colors = self.sm.get("tray_colors", default_colors)
+        rgb = tray_colors.get(self._state, default_colors["idle"])
+        painter.setBrush(QColor(rgb[0], rgb[1], rgb[2]))
+
         painter.setPen(QColor(255, 255, 255, 200))
         painter.drawEllipse(4, 4, 24, 24)
         painter.end()

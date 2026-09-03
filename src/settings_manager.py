@@ -13,6 +13,11 @@ class SettingsManager(QObject):
             "toggle_recording": "Ctrl+Shift+R",
         },
         "show_notifications": True,
+        "tray_colors": {
+            "idle": [50, 150, 250],
+            "recording": [220, 50, 50],
+            "saving": [230, 180, 30],
+        },
         "video_resolution": "720p",
         "video_fps": 15,
         "video_bitrate": 1500,
