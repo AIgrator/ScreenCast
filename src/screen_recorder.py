@@ -163,10 +163,9 @@ class ScreenRecorder(QObject):
         out_h = preset["height"]
         fps = self.sm.get("video_fps", 15)
 
-        camera = dxcam.create(output_idx=self.monitor_index, backend="dxgi")
-        info = camera.info
-        src_w = info["width"]
-        src_h = info["height"]
+        camera = dxcam.create(output_idx=self.monitor_index - 1, backend="dxgi")
+        src_w = camera.width
+        src_h = camera.height
         need_resize = (src_w != out_w or src_h != out_h)
         logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
