@@ -113,7 +113,7 @@ uv run python recorder.py
 
 ## Performance
 
-Recording pipes raw video frames directly to FFmpeg via stdin, which encodes H.264 (GPU via NVENC/AMF/QSV or CPU via libx264). Audio is captured via WASAPI loopback and written to a temp WAV file. Muxing uses `-c:v copy` (no video re-encoding) for near-instant final output.
+Recording pipes raw video frames directly to FFmpeg via stdin, and audio via a Windows named pipe. A single FFmpeg process encodes H.264 (GPU via NVENC/AMF/QSV or CPU via libx264) + AAC and writes the final MP4 directly. No temporary files, no separate mux step.
 
 Two capture backends are available:
 - **DXcam** (default) — uses DXGI Desktop Duplication API, captures directly from GPU. Lower CPU usage (~2-3% at 1080p30).
