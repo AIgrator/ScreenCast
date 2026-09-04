@@ -7,8 +7,8 @@ Lightweight screen and system audio recorder for Windows. Lives in the system tr
 - Screen recording (any monitor) with resolution scaling (480p / 720p / 1080p)
 - System audio capture via WASAPI loopback (speakers, headphones — not microphone)
 - Video + audio compression via FFmpeg (H.264 + AAC)
-- GPU-accelerated capture: DXcam (DXGI Desktop Duplication) or mss (GDI)
-- Hardware encoding: NVIDIA NVENC, AMD AMF, Intel Quick Sync (auto-detected)
+- GPU-accelerated capture: DXcam (DXGI Desktop Duplication) or mss (GDI). Auto-fallback: if DXcam unavailable (VM, no GPU), automatically uses mss.
+- Hardware encoding: NVIDIA NVENC, AMD AMF, Intel Quick Sync (auto-detected). Falls back to libx264 if no HW encoder available.
 - Low CPU usage: pipe-based video writing, frame capture optimization
 - System tray icon with pie arc progress indicator:
   - Blue — idle
@@ -116,14 +116,15 @@ uv run python recorder.py
 Recording pipes raw video frames directly to FFmpeg via stdin, and audio via a Windows named pipe. A single FFmpeg process encodes H.264 (GPU via NVENC/AMF/QSV or CPU via libx264) + AAC and writes the final MP4 directly. No temporary files, no separate mux step.
 
 Two capture backends are available:
-- **DXcam** (default) — uses DXGI Desktop Duplication API, captures directly from GPU. Lower CPU usage (~2-3% at 1080p30).
-- **mss** — uses GDI screenshots, higher CPU usage (~5-8% at 1080p30). Fallback for systems without DXGI support.
+- **DXcam** (default) — uses DXGI Desktop Duplication API, captures directly from GPU. Lower CPU usage (~2-3% at 1080p30). Falls back to MSS if unavailable (VM, no GPU).
+- **mss** — uses GDI screenshots, higher CPU usage (~5-8% at 1080p30). Used as fallback or on systems without DXGI support.
 
-Hardware encoding is auto-detected at startup. When available, NVENC/AMF/QSV offloads H.264 encoding to the GPU, further reducing CPU load.
+Hardware encoding is auto-detected at startup. When available, NVENC/AMF/QSV offloads H.264 encoding to the GPU, further reducing CPU load. Falls back to libx264 (CPU) if no HW encoder is found.
 
 Typical CPU usage:
 - DXcam + HW encoding: 2–4% at 1080p 30 FPS
 - MSS + HW encoding: 5–8% at 1080p 30 FPS
+- MSS + libx264 (VM, no GPU): 10–15% at 1080p 30 FPS
 
 ## License
 
