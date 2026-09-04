@@ -4,6 +4,8 @@ import os
 import subprocess
 import logging
 import platform
+import ctypes
+import ctypes.wintypes
 import numpy as np
 import cv2
 import mss
@@ -21,6 +23,8 @@ HW_ENCODERS = [
     {"key": "h264_amf",   "label": "AMD AMF"},
     {"key": "h264_qsv", "label": "Intel Quick Sync"},
 ]
+
+_kernel32 = ctypes.windll.kernel32
 
 
 def detect_hw_encoder(ffmpeg_bin=None):
@@ -41,6 +45,50 @@ def detect_hw_encoder(ffmpeg_bin=None):
             pass
     logging.info("No HW encoder found, using libx264")
     return "libx264"
+
+
+class _NamedPipe:
+    def __init__(self):
+        self._handle = None
+        self._name = f"\\\\.\\pipe\\sc_{os.getpid()}_{time.time_ns()}"
+
+    @property
+    def path(self):
+        return self._name
+
+    def open(self):
+        self._handle = _kernel32.CreateNamedPipeW(
+            self._name,
+            0x00000002,
+            0x00000000,
+            1,
+            1024 * 1024,
+            1024 * 1024,
+            0,
+            None,
+        )
+        if self._handle in (None, -1, 0xFFFFFFFFFFFFFFFF):
+            raise OSError(f"CreateNamedPipeW failed: {ctypes.get_last_error()}")
+
+    def wait_for_client(self):
+        result = _kernel32.ConnectNamedPipe(self._handle, None)
+        err = ctypes.get_last_error()
+        if not result and err != 535:
+            raise OSError(f"ConnectNamedPipe failed: {err}")
+
+    def write(self, data: bytes):
+        written = ctypes.wintypes.DWORD()
+        buf = ctypes.create_string_buffer(data)
+        result = _kernel32.WriteFile(self._handle, buf, len(data), ctypes.byref(written), None)
+        if not result:
+            raise OSError(f"WriteFile failed: {ctypes.get_last_error()}")
+        return written.value
+
+    def close(self):
+        if self._handle is not None:
+            _kernel32.DisconnectNamedPipe(self._handle)
+            _kernel32.CloseHandle(self._handle)
+            self._handle = None
 
 
 class AudioDevices:
@@ -82,8 +130,7 @@ class ScreenRecorder(QObject):
         self.is_recording = False
 
         self._ffmpeg_proc = None
-        self._video_pipe_w = None
-        self._audio_pipe_w = None
+        self._audio_pipe = None
 
     def start(self):
         if self.is_recording:
@@ -103,30 +150,28 @@ class ScreenRecorder(QObject):
         vbr = self.sm.get("video_bitrate", 1500)
         abr = self.sm.get("audio_bitrate", 256)
 
-        v_r, self._video_pipe_w = os.pipe()
-        a_r, self._audio_pipe_w = os.pipe()
+        self._audio_pipe = _NamedPipe()
+        self._audio_pipe.open()
 
         cmd = [
             ffmpeg_bin, "-y",
             "-f", "rawvideo", "-vcodec", "rawvideo",
             "-pix_fmt", "bgr24", "-s", f"{self._out_w}x{self._out_h}",
             "-r", str(self._fps),
-            "-i", f"pipe:{v_r}",
+            "-i", "pipe:0",
             "-f", "s16le",
             "-sample_rate", str(self._samplerate),
             "-channels", "2",
-            "-i", f"pipe:{a_r}",
+            "-i", self._audio_pipe.path,
             "-c:v", vcodec, "-b:v", f"{vbr}k",
             "-c:a", "aac", "-b:a", f"{abr}k",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
-            self.output_file
+            self.output_file,
         ]
 
         logging.info(f"FFmpeg combined: {' '.join(cmd)}")
-        self._ffmpeg_proc = subprocess.Popen(cmd, pass_fds=(v_r, a_r))
-        os.close(v_r)
-        os.close(a_r)
+        self._ffmpeg_proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
 
         self.is_recording = True
         self.stop_event.clear()
@@ -139,7 +184,6 @@ class ScreenRecorder(QObject):
         logging.info(tr.t("log.video_thread_started"))
         if platform.system() == "Windows":
             try:
-                import ctypes
                 ctypes.windll.kernel32.SetThreadPriority(
                     ctypes.windll.kernel32.GetCurrentThread(), -1
                 )
@@ -171,7 +215,7 @@ class ScreenRecorder(QObject):
 
             logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
-            pipe_fd = self._video_pipe_w
+            stdin = self._ffmpeg_proc.stdin
             frame_interval = 1.0 / fps
             next_frame_time = time.time()
 
@@ -193,7 +237,7 @@ class ScreenRecorder(QObject):
                             frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                             prof_resize += time.perf_counter() - t2
                         t3 = time.perf_counter()
-                        os.write(pipe_fd, frame.tobytes())
+                        stdin.write(frame.tobytes())
                         prof_write += time.perf_counter() - t3
                         prof_frames += 1
 
@@ -220,7 +264,7 @@ class ScreenRecorder(QObject):
                         time.sleep(sleep_time)
                     else:
                         next_frame_time = time.time()
-            except OSError:
+            except (BrokenPipeError, OSError):
                 pass
             logging.info(tr.t("log.video_writer_closed"))
 
@@ -238,7 +282,7 @@ class ScreenRecorder(QObject):
 
         logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
-        pipe_fd = self._video_pipe_w
+        stdin = self._ffmpeg_proc.stdin
         camera.start(target_fps=fps, video_mode=True)
 
         prof_t0 = time.perf_counter()
@@ -261,7 +305,7 @@ class ScreenRecorder(QObject):
                         frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         prof_resize += time.perf_counter() - t2
                     t3 = time.perf_counter()
-                    os.write(pipe_fd, frame.tobytes())
+                    stdin.write(frame.tobytes())
                     prof_write += time.perf_counter() - t3
                     prof_frames += 1
 
@@ -281,7 +325,7 @@ class ScreenRecorder(QObject):
                         prof_write = 0.0
                 except Exception as e:
                     logging.error(tr.t("log.frame_error", error=e), exc_info=True)
-        except OSError:
+        except (BrokenPipeError, OSError):
             pass
         finally:
             camera.stop()
@@ -289,7 +333,7 @@ class ScreenRecorder(QObject):
 
     def _record_audio(self):
         logging.info(tr.t("log.audio_thread_started"))
-        pipe_fd = self._audio_pipe_w
+        pipe = self._audio_pipe
         try:
             sp = None
             if self.audio_device_id is not None:
@@ -306,6 +350,8 @@ class ScreenRecorder(QObject):
 
             logging.info(tr.t("log.loopback_info", name=sp.name, channels=sp.channels, samplerate=samplerate))
 
+            pipe.wait_for_client()
+
             with mic.recorder(samplerate=samplerate, channels=sp.channels, blocksize=4096) as recorder:
                 while not self.stop_event.is_set():
                     try:
@@ -313,7 +359,7 @@ class ScreenRecorder(QObject):
                         if data.shape[1] > 2:
                             data = data[:, :2]
                         pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
-                        os.write(pipe_fd, pcm.tobytes())
+                        pipe.write(pcm.tobytes())
                     except Exception as e:
                         logging.error(tr.t("log.audio_frame_error", error=e), exc_info=True)
                         time.sleep(0.01)
@@ -336,14 +382,15 @@ class ScreenRecorder(QObject):
         if self.audio_thread:
             self.audio_thread.join()
 
-        for name, fd in [("video", self._video_pipe_w), ("audio", self._audio_pipe_w)]:
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
-        self._video_pipe_w = None
-        self._audio_pipe_w = None
+        if self._ffmpeg_proc and self._ffmpeg_proc.stdin:
+            try:
+                self._ffmpeg_proc.stdin.close()
+            except OSError:
+                pass
+
+        if self._audio_pipe:
+            self._audio_pipe.close()
+            self._audio_pipe = None
 
         if self._ffmpeg_proc:
             logging.info("FFmpeg: waiting for finish...")
