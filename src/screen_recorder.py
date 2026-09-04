@@ -192,7 +192,11 @@ class ScreenRecorder(QObject):
         try:
             backend = self.sm.get("capture_backend", "mss")
             if backend == "dxcam":
-                self._record_video_dxcam()
+                try:
+                    self._record_video_dxcam()
+                except Exception as e:
+                    logging.warning(f"DXcam failed ({e}), falling back to MSS")
+                    self._record_video_mss()
             else:
                 self._record_video_mss()
         except Exception as e:
