@@ -83,6 +83,17 @@ class SettingsPageWidget(QWidget):
         enc_row.addWidget(self.encoder_combo)
         video_layout.addLayout(enc_row)
 
+        cap_row = QHBoxLayout()
+        cap_row.addWidget(QLabel(tr.t("quality.capture")))
+        self.capture_combo = QComboBox()
+        self.capture_combo.addItem("mss (CPU)", "mss")
+        self.capture_combo.addItem("DXcam (GPU DXGI)", "dxcam")
+        idx = self.capture_combo.findData(self.sm.get("capture_backend", "mss"))
+        if idx >= 0:
+            self.capture_combo.setCurrentIndex(idx)
+        cap_row.addWidget(self.capture_combo)
+        video_layout.addLayout(cap_row)
+
         layout.addRow(video_group)
 
         audio_group = QGroupBox(tr.t("quality.audio"))
@@ -118,6 +129,7 @@ class SettingsPageWidget(QWidget):
             "video_fps": self.fps_combo.currentData(),
             "video_bitrate": self.vbitrate_combo.currentData(),
             "video_encoder": self.encoder_combo.currentData(),
+            "capture_backend": self.capture_combo.currentData(),
             "audio_bitrate": self.abitrate_combo.currentData(),
             "audio_sample_rate": self.asr_combo.currentData(),
         }

@@ -26,6 +26,7 @@ class SettingsManager(QObject):
         "video_fps": 15,
         "video_bitrate": 1500,
         "video_encoder": "auto",
+        "capture_backend": "mss",
         "audio_bitrate": 256,
         "audio_sample_rate": 48000,
         "selected_monitor": 1,

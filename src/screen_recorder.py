@@ -97,55 +97,103 @@ class ScreenRecorder(QObject):
             except Exception:
                 pass
         try:
-            with mss.MSS() as sct:
-                if self.monitor_index < len(sct.monitors):
-                    monitor = sct.monitors[self.monitor_index]
-                else:
-                    logging.warning(tr.t("log.monitor_not_found", index=self.monitor_index))
-                    monitor = sct.monitors[1]
-
-                src_w = monitor["width"]
-                src_h = monitor["height"]
-
-                res_key = self.sm.get("video_resolution", "720p")
-                preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
-                out_w = preset["width"]
-                out_h = preset["height"]
-                fps = self.sm.get("video_fps", 15)
-
-                need_resize = (src_w != out_w or src_h != out_h)
-                logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
-
-                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-                writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
-
-                if not writer.isOpened():
-                    raise RuntimeError(tr.t("log.videowriter_failed", path=self.video_temp))
-
-                frame_interval = 1.0 / fps
-                next_frame_time = time.time()
-
-                while not self.stop_event.is_set():
-                    try:
-                        img = sct.grab(monitor)
-                        frame = np.array(img)[:, :, :3]
-                        if need_resize:
-                            frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
-                        writer.write(frame)
-                    except Exception as e:
-                        logging.error(tr.t("log.frame_error", error=e), exc_info=True)
-
-                    next_frame_time += frame_interval
-                    sleep_time = next_frame_time - time.time()
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
-                    else:
-                        next_frame_time = time.time()
-
-                writer.release()
-                logging.info(tr.t("log.video_writer_closed"))
+            backend = self.sm.get("capture_backend", "mss")
+            if backend == "dxcam":
+                self._record_video_dxcam()
+            else:
+                self._record_video_mss()
         except Exception as e:
             logging.error(tr.t("log.video_thread_error", error=e), exc_info=True)
+
+    def _record_video_mss(self):
+        with mss.MSS() as sct:
+            if self.monitor_index < len(sct.monitors):
+                monitor = sct.monitors[self.monitor_index]
+            else:
+                logging.warning(tr.t("log.monitor_not_found", index=self.monitor_index))
+                monitor = sct.monitors[1]
+
+            src_w = monitor["width"]
+            src_h = monitor["height"]
+
+            res_key = self.sm.get("video_resolution", "720p")
+            preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
+            out_w = preset["width"]
+            out_h = preset["height"]
+            fps = self.sm.get("video_fps", 15)
+
+            need_resize = (src_w != out_w or src_h != out_h)
+            logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
+
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
+
+            if not writer.isOpened():
+                raise RuntimeError(tr.t("log.videowriter_failed", path=self.video_temp))
+
+            frame_interval = 1.0 / fps
+            next_frame_time = time.time()
+
+            while not self.stop_event.is_set():
+                try:
+                    img = sct.grab(monitor)
+                    frame = np.array(img)[:, :, :3]
+                    if need_resize:
+                        frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+                    writer.write(frame)
+                except Exception as e:
+                    logging.error(tr.t("log.frame_error", error=e), exc_info=True)
+
+                next_frame_time += frame_interval
+                sleep_time = next_frame_time - time.time()
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                else:
+                    next_frame_time = time.time()
+
+            writer.release()
+            logging.info(tr.t("log.video_writer_closed"))
+
+    def _record_video_dxcam(self):
+        import dxcam
+
+        res_key = self.sm.get("video_resolution", "720p")
+        preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
+        out_w = preset["width"]
+        out_h = preset["height"]
+        fps = self.sm.get("video_fps", 15)
+
+        camera = dxcam.create(output_idx=self.monitor_index, backend="dxgi")
+        info = camera.info
+        src_w = info["width"]
+        src_h = info["height"]
+        need_resize = (src_w != out_w or src_h != out_h)
+        logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
+
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
+
+        if not writer.isOpened():
+            raise RuntimeError(tr.t("log.videowriter_failed", path=self.video_temp))
+
+        camera.start(target_fps=fps, video_mode=True)
+
+        while not self.stop_event.is_set():
+            try:
+                frame = camera.get_latest_frame()
+                if frame is None:
+                    time.sleep(0.005)
+                    continue
+                frame = frame[:, :, :3]
+                if need_resize:
+                    frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+                writer.write(frame)
+            except Exception as e:
+                logging.error(tr.t("log.frame_error", error=e), exc_info=True)
+
+        camera.stop()
+        writer.release()
+        logging.info(tr.t("log.video_writer_closed"))
 
     def _record_audio(self):
         logging.info(tr.t("log.audio_thread_started"))
