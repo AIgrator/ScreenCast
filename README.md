@@ -7,7 +7,9 @@ Lightweight screen and system audio recorder for Windows. Lives in the system tr
 - Screen recording (any monitor) with resolution scaling (480p / 720p / 1080p)
 - System audio capture via WASAPI loopback (speakers, headphones — not microphone)
 - Video + audio compression via FFmpeg (H.264 + AAC)
-- Low CPU usage: MJPG temp codec, array slicing, low thread priority
+- GPU-accelerated capture: DXcam (DXGI Desktop Duplication) or mss (GDI)
+- Hardware encoding: NVIDIA NVENC, AMD AMF, Intel Quick Sync (auto-detected)
+- Low CPU usage: pipe-based video writing, frame capture optimization
 - System tray icon with pie arc progress indicator:
   - Blue — idle
   - Red — recording
@@ -69,6 +71,8 @@ uv run python recorder.py
 - **Resolution** — 480p, 720p, 1080p
 - **Frame rate** — 10, 15, 20, 25, 30 FPS
 - **Video bitrate** — 500–5000 kbps
+- **Video encoder** — Auto (HW detection), libx264, NVIDIA NVENC, AMD AMF, Intel Quick Sync
+- **Capture backend** — mss (CPU, GDI) or DXcam (GPU, DXGI Desktop Duplication)
 - **Audio bitrate** — 128, 192, 256, 320 kbps
 - **Sample rate** — 44100, 48000 Hz
 
@@ -99,18 +103,27 @@ uv run python recorder.py
 
 - **Python 3.10+**
 - **PyQt6** — GUI, tray, dialogs
-- **mss** — screen capture
+- **dxcam** — GPU screen capture (DXGI Desktop Duplication API)
+- **mss** — CPU screen capture (GDI fallback)
 - **soundcard** — system audio recording (WASAPI loopback)
-- **opencv-python** — frame processing (MJPG temp codec)
+- **opencv-python** — frame processing, resize, color conversion
 - **imageio-ffmpeg** — bundled FFmpeg for compression
 - **pynput** — global hotkeys
 - **uv** — package manager
 
 ## Performance
 
-Recording uses MJPG for the temporary video file (fast writes, no compression overhead). FFmpeg re-encodes to H.264 + AAC during the saving phase. Frame capture uses numpy array slicing instead of `cv2.cvtColor` to avoid unnecessary memory copies. Audio blocksize is set to 4096 frames to reduce callback frequency. On Windows, the video capture thread runs at lower priority to minimize system impact.
+Recording pipes raw video frames directly to FFmpeg via stdin, which encodes H.264 (GPU via NVENC/AMF/QSV or CPU via libx264). Audio is captured via WASAPI loopback and written to a temp WAV file. Muxing uses `-c:v copy` (no video re-encoding) for near-instant final output.
 
-Typical CPU usage: 5–8% at 720p 25 FPS.
+Two capture backends are available:
+- **DXcam** (default) — uses DXGI Desktop Duplication API, captures directly from GPU. Lower CPU usage (~2-3% at 1080p30).
+- **mss** — uses GDI screenshots, higher CPU usage (~5-8% at 1080p30). Fallback for systems without DXGI support.
+
+Hardware encoding is auto-detected at startup. When available, NVENC/AMF/QSV offloads H.264 encoding to the GPU, further reducing CPU load.
+
+Typical CPU usage:
+- DXcam + HW encoding: 2–4% at 1080p 30 FPS
+- MSS + HW encoding: 5–8% at 1080p 30 FPS
 
 ## License
 
