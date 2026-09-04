@@ -77,7 +77,7 @@ class ScreenRecorder(QObject):
         base_name = parse_filename_pattern(pattern, self.output_dir)
 
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        self.video_temp = os.path.join(self.output_dir, f"temp_video_{timestamp}.avi")
+        self.video_temp = os.path.join(self.output_dir, f"temp_video_{timestamp}.mp4")
         self.audio_temp = os.path.join(self.output_dir, f"temp_audio_{timestamp}.wav")
         self.output_file = os.path.join(self.output_dir, f"{base_name}.mp4")
 
@@ -105,6 +105,28 @@ class ScreenRecorder(QObject):
         except Exception as e:
             logging.error(tr.t("log.video_thread_error", error=e), exc_info=True)
 
+    def _start_ffmpeg_writer(self, w, h, fps):
+        ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-f", "rawvideo", "-vcodec", "rawvideo",
+            "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps),
+            "-i", "pipe:0",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            self.video_temp
+        ]
+        logging.info(f"FFmpeg writer: {' '.join(cmd)}")
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        stderr_lines = []
+        def read_stderr():
+            for line in proc.stderr:
+                stderr_lines.append(line.decode("utf-8", errors="ignore").strip())
+        threading.Thread(target=read_stderr, daemon=True).start()
+
+        return proc, stderr_lines
+
     def _record_video_mss(self):
         with mss.MSS() as sct:
             if self.monitor_index < len(sct.monitors):
@@ -125,11 +147,7 @@ class ScreenRecorder(QObject):
             need_resize = (src_w != out_w or src_h != out_h)
             logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
-            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-            writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
-
-            if not writer.isOpened():
-                raise RuntimeError(tr.t("log.videowriter_failed", path=self.video_temp))
+            proc, stderr_lines = self._start_ffmpeg_writer(out_w, out_h, fps)
 
             frame_interval = 1.0 / fps
             next_frame_time = time.time()
@@ -140,18 +158,93 @@ class ScreenRecorder(QObject):
             prof_resize = 0.0
             prof_write = 0.0
 
+            try:
+                while not self.stop_event.is_set():
+                    try:
+                        t1 = time.perf_counter()
+                        img = sct.grab(monitor)
+                        t2 = time.perf_counter()
+                        frame = np.array(img)[:, :, :3]
+                        prof_capture += t2 - t1
+                        if need_resize:
+                            frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+                            prof_resize += time.perf_counter() - t2
+                        t3 = time.perf_counter()
+                        proc.stdin.write(frame.tobytes())
+                        prof_write += time.perf_counter() - t3
+                        prof_frames += 1
+
+                        now = time.perf_counter()
+                        if now - prof_t0 >= 5.0:
+                            total = prof_capture + prof_resize + prof_write
+                            logging.info(
+                                f"[PROF] {prof_frames} frames in {now - prof_t0:.1f}s | "
+                                f"capture: {prof_capture/total*100:.0f}% ({prof_capture/prof_frames*1000:.1f}ms) | "
+                                f"resize: {prof_resize/total*100:.0f}% ({prof_resize/prof_frames*1000:.1f}ms) | "
+                                f"write: {prof_write/total*100:.0f}% ({prof_write/prof_frames*1000:.1f}ms)"
+                            )
+                            prof_t0 = now
+                            prof_frames = 0
+                            prof_capture = 0.0
+                            prof_resize = 0.0
+                            prof_write = 0.0
+                    except Exception as e:
+                        logging.error(tr.t("log.frame_error", error=e), exc_info=True)
+
+                    next_frame_time += frame_interval
+                    sleep_time = next_frame_time - time.time()
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                    else:
+                        next_frame_time = time.time()
+            finally:
+                if proc.stdin:
+                    proc.stdin.close()
+                proc.wait()
+                if proc.returncode != 0:
+                    logging.error(f"FFmpeg writer error ({proc.returncode}): {' '.join(stderr_lines[-5:])}")
+                logging.info(tr.t("log.video_writer_closed"))
+
+    def _record_video_dxcam(self):
+        import dxcam
+
+        res_key = self.sm.get("video_resolution", "720p")
+        preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
+        out_w = preset["width"]
+        out_h = preset["height"]
+        fps = self.sm.get("video_fps", 15)
+
+        camera = dxcam.create(output_idx=self.monitor_index - 1, backend="dxgi")
+        src_w = camera.width
+        src_h = camera.height
+        need_resize = (src_w != out_w or src_h != out_h)
+        logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
+
+        proc, stderr_lines = self._start_ffmpeg_writer(out_w, out_h, fps)
+
+        camera.start(target_fps=fps, video_mode=True)
+
+        prof_t0 = time.perf_counter()
+        prof_frames = 0
+        prof_capture = 0.0
+        prof_resize = 0.0
+        prof_write = 0.0
+
+        try:
             while not self.stop_event.is_set():
                 try:
                     t1 = time.perf_counter()
-                    img = sct.grab(monitor)
+                    frame = camera.get_latest_frame()
                     t2 = time.perf_counter()
-                    frame = np.array(img)[:, :, :3]
+                    if frame is None:
+                        time.sleep(0.005)
+                        continue
                     prof_capture += t2 - t1
                     if need_resize:
                         frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         prof_resize += time.perf_counter() - t2
                     t3 = time.perf_counter()
-                    writer.write(frame)
+                    proc.stdin.write(frame.tobytes())
                     prof_write += time.perf_counter() - t3
                     prof_frames += 1
 
@@ -171,83 +264,14 @@ class ScreenRecorder(QObject):
                         prof_write = 0.0
                 except Exception as e:
                     logging.error(tr.t("log.frame_error", error=e), exc_info=True)
-
-                next_frame_time += frame_interval
-                sleep_time = next_frame_time - time.time()
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-                else:
-                    next_frame_time = time.time()
-
-            writer.release()
+        finally:
+            camera.stop()
+            if proc.stdin:
+                proc.stdin.close()
+            proc.wait()
+            if proc.returncode != 0:
+                logging.error(f"FFmpeg writer error ({proc.returncode}): {' '.join(stderr_lines[-5:])}")
             logging.info(tr.t("log.video_writer_closed"))
-
-    def _record_video_dxcam(self):
-        import dxcam
-
-        res_key = self.sm.get("video_resolution", "720p")
-        preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
-        out_w = preset["width"]
-        out_h = preset["height"]
-        fps = self.sm.get("video_fps", 15)
-
-        camera = dxcam.create(output_idx=self.monitor_index - 1, backend="dxgi")
-        src_w = camera.width
-        src_h = camera.height
-        need_resize = (src_w != out_w or src_h != out_h)
-        logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
-
-        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        writer = cv2.VideoWriter(self.video_temp, fourcc, fps, (out_w, out_h))
-
-        if not writer.isOpened():
-            raise RuntimeError(tr.t("log.videowriter_failed", path=self.video_temp))
-
-        camera.start(target_fps=fps, video_mode=True)
-
-        prof_t0 = time.perf_counter()
-        prof_frames = 0
-        prof_capture = 0.0
-        prof_resize = 0.0
-        prof_write = 0.0
-
-        while not self.stop_event.is_set():
-            try:
-                t1 = time.perf_counter()
-                frame = camera.get_latest_frame()
-                t2 = time.perf_counter()
-                if frame is None:
-                    time.sleep(0.005)
-                    continue
-                prof_capture += t2 - t1
-                if need_resize:
-                    frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
-                    prof_resize += time.perf_counter() - t2
-                t3 = time.perf_counter()
-                writer.write(frame)
-                prof_write += time.perf_counter() - t3
-                prof_frames += 1
-
-                now = time.perf_counter()
-                if now - prof_t0 >= 5.0:
-                    total = prof_capture + prof_resize + prof_write
-                    logging.info(
-                        f"[PROF] {prof_frames} frames in {now - prof_t0:.1f}s | "
-                        f"capture: {prof_capture/total*100:.0f}% ({prof_capture/prof_frames*1000:.1f}ms) | "
-                        f"resize: {prof_resize/total*100:.0f}% ({prof_resize/prof_frames*1000:.1f}ms) | "
-                        f"write: {prof_write/total*100:.0f}% ({prof_write/prof_frames*1000:.1f}ms)"
-                    )
-                    prof_t0 = now
-                    prof_frames = 0
-                    prof_capture = 0.0
-                    prof_resize = 0.0
-                    prof_write = 0.0
-            except Exception as e:
-                logging.error(tr.t("log.frame_error", error=e), exc_info=True)
-
-        camera.stop()
-        writer.release()
-        logging.info(tr.t("log.video_writer_closed"))
 
     def _record_audio(self):
         logging.info(tr.t("log.audio_thread_started"))
@@ -323,24 +347,16 @@ class ScreenRecorder(QObject):
         try:
             ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
             has_audio = os.path.exists(self.audio_temp) and os.path.getsize(self.audio_temp) > 0
-            vbr = self.sm.get("video_bitrate", 1500)
             abr = self.sm.get("audio_bitrate", 256)
-
-            encoder = self.sm.get("video_encoder", "auto")
-            if encoder == "auto":
-                vcodec = detect_hw_encoder(ffmpeg_bin)
-            else:
-                vcodec = encoder
 
             duration = self._get_duration(self.video_temp)
             logging.info(tr.t("log.video_duration", duration=duration))
-            logging.info(f"Using encoder: {vcodec}")
 
             if has_audio:
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp, "-i", self.audio_temp,
-                    "-c:v", vcodec, "-b:v", f"{vbr}k",
+                    "-c:v", "copy",
                     "-c:a", "aac", "-b:a", f"{abr}k",
                     "-shortest", "-progress", "pipe:1",
                     self.output_file
@@ -350,7 +366,7 @@ class ScreenRecorder(QObject):
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp,
-                    "-c:v", vcodec, "-b:v", f"{vbr}k",
+                    "-c:v", "copy",
                     "-progress", "pipe:1",
                     self.output_file
                 ]
