@@ -107,12 +107,22 @@ class ScreenRecorder(QObject):
 
     def _start_ffmpeg_writer(self, w, h, fps):
         ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+
+        encoder = self.sm.get("video_encoder", "auto")
+        if encoder == "auto":
+            vcodec = detect_hw_encoder(ffmpeg_bin)
+        else:
+            vcodec = encoder
+
+        vbr = self.sm.get("video_bitrate", 1500)
+
         cmd = [
             ffmpeg_bin, "-y",
             "-f", "rawvideo", "-vcodec", "rawvideo",
             "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps),
             "-i", "pipe:0",
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:v", vcodec, "-b:v", f"{vbr}k",
+            "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             self.video_temp
         ]
