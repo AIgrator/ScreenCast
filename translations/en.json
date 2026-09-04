@@ -58,6 +58,8 @@
   "quality.audio": "Audio (priority — quality for transcription)",
   "quality.audio_bitrate": "Audio bitrate:",
   "quality.sample_rate": "Sample rate:",
+  "quality.encoder": "Encoder:",
+  "quality.encoder_auto": "Auto (detect hardware)",
 
   "hotkey.choose_combination": "Choose a key combination",
   "hotkey.press_combination": "Press a combination\u2026",

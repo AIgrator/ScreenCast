@@ -17,6 +17,32 @@ from src.ui.settings_dialog import RESOLUTION_PRESETS
 from src.ui.file_page import parse_filename_pattern
 from src import translation_manager as tr
 
+HW_ENCODERS = [
+    {"key": "h264_nvenc", "label": "NVIDIA NVENC"},
+    {"key": "h264_amf",   "label": "AMD AMF"},
+    {"key": "h264_qsv", "label": "Intel Quick Sync"},
+]
+
+
+def detect_hw_encoder(ffmpeg_bin=None):
+    if ffmpeg_bin is None:
+        ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+    for enc in HW_ENCODERS:
+        try:
+            cmd = [
+                ffmpeg_bin, "-y",
+                "-f", "lavfi", "-i", "nullsrc=s=320x240:d=0.1",
+                "-c:v", enc["key"], "-f", "null", "-"
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
+            if result.returncode == 0:
+                logging.info(f"HW encoder found: {enc['label']} ({enc['key']})")
+                return enc["key"]
+        except Exception:
+            pass
+    logging.info("No HW encoder found, using libx264")
+    return "libx264"
+
 
 class AudioDevices:
     @staticmethod
@@ -198,14 +224,21 @@ class ScreenRecorder(QObject):
             vbr = self.sm.get("video_bitrate", 1500)
             abr = self.sm.get("audio_bitrate", 256)
 
+            encoder = self.sm.get("video_encoder", "auto")
+            if encoder == "auto":
+                vcodec = detect_hw_encoder(ffmpeg_bin)
+            else:
+                vcodec = encoder
+
             duration = self._get_duration(self.video_temp)
             logging.info(tr.t("log.video_duration", duration=duration))
+            logging.info(f"Using encoder: {vcodec}")
 
             if has_audio:
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp, "-i", self.audio_temp,
-                    "-c:v", "libx264", "-b:v", f"{vbr}k", "-preset", "veryfast",
+                    "-c:v", vcodec, "-b:v", f"{vbr}k",
                     "-c:a", "aac", "-b:a", f"{abr}k",
                     "-shortest", "-progress", "pipe:1",
                     self.output_file
@@ -215,7 +248,7 @@ class ScreenRecorder(QObject):
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", self.video_temp,
-                    "-c:v", "libx264", "-b:v", f"{vbr}k", "-preset", "veryfast",
+                    "-c:v", vcodec, "-b:v", f"{vbr}k",
                     "-progress", "pipe:1",
                     self.output_file
                 ]

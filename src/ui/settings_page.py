@@ -69,6 +69,20 @@ class SettingsPageWidget(QWidget):
         vbr_row.addWidget(self.vbitrate_combo)
         video_layout.addLayout(vbr_row)
 
+        enc_row = QHBoxLayout()
+        enc_row.addWidget(QLabel(tr.t("quality.encoder")))
+        self.encoder_combo = QComboBox()
+        self.encoder_combo.addItem(tr.t("quality.encoder_auto"), "auto")
+        self.encoder_combo.addItem("libx264 (CPU)", "libx264")
+        self.encoder_combo.addItem("NVIDIA NVENC", "h264_nvenc")
+        self.encoder_combo.addItem("AMD AMF", "h264_amf")
+        self.encoder_combo.addItem("Intel QSV", "h264_qsv")
+        idx = self.encoder_combo.findData(self.sm.get("video_encoder", "auto"))
+        if idx >= 0:
+            self.encoder_combo.setCurrentIndex(idx)
+        enc_row.addWidget(self.encoder_combo)
+        video_layout.addLayout(enc_row)
+
         layout.addRow(video_group)
 
         audio_group = QGroupBox(tr.t("quality.audio"))
@@ -103,6 +117,7 @@ class SettingsPageWidget(QWidget):
             "video_resolution": self.res_combo.currentData(),
             "video_fps": self.fps_combo.currentData(),
             "video_bitrate": self.vbitrate_combo.currentData(),
+            "video_encoder": self.encoder_combo.currentData(),
             "audio_bitrate": self.abitrate_combo.currentData(),
             "audio_sample_rate": self.asr_combo.currentData(),
         }

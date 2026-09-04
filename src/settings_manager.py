@@ -25,6 +25,7 @@ class SettingsManager(QObject):
         "video_resolution": "720p",
         "video_fps": 15,
         "video_bitrate": 1500,
+        "video_encoder": "auto",
         "audio_bitrate": 256,
         "audio_sample_rate": 48000,
         "selected_monitor": 1,

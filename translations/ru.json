@@ -58,6 +58,8 @@
   "quality.audio": "Аудио (приоритет — качество для транскрибации)",
   "quality.audio_bitrate": "Битрейт аудио:",
   "quality.sample_rate": "Частота дискретизации:",
+  "quality.encoder": "Кодер:",
+  "quality.encoder_auto": "Авто (аппаратный)",
 
   "hotkey.choose_combination": "Выберите комбинацию клавиш",
   "hotkey.press_combination": "Нажмите комбинацию\u2026",
