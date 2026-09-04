@@ -156,7 +156,7 @@ class ScreenRecorder(QObject):
         cmd = [
             ffmpeg_bin, "-y",
             "-f", "rawvideo", "-vcodec", "rawvideo",
-            "-pix_fmt", "bgr24", "-s", f"{self._out_w}x{self._out_h}",
+            "-pix_fmt", "rgb24", "-s", f"{self._out_w}x{self._out_h}",
             "-r", str(self._fps),
             "-i", "pipe:0",
             "-f", "s16le",
@@ -305,7 +305,7 @@ class ScreenRecorder(QObject):
                         frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         prof_resize += time.perf_counter() - t2
                     t3 = time.perf_counter()
-                    stdin.write(frame.tobytes())
+                    stdin.write(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).tobytes())
                     prof_write += time.perf_counter() - t3
                     prof_frames += 1
 
