@@ -134,13 +134,41 @@ class ScreenRecorder(QObject):
             frame_interval = 1.0 / fps
             next_frame_time = time.time()
 
+            prof_t0 = time.perf_counter()
+            prof_frames = 0
+            prof_capture = 0.0
+            prof_resize = 0.0
+            prof_write = 0.0
+
             while not self.stop_event.is_set():
                 try:
+                    t1 = time.perf_counter()
                     img = sct.grab(monitor)
+                    t2 = time.perf_counter()
                     frame = np.array(img)[:, :, :3]
+                    prof_capture += t2 - t1
                     if need_resize:
                         frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+                        prof_resize += time.perf_counter() - t2
+                    t3 = time.perf_counter()
                     writer.write(frame)
+                    prof_write += time.perf_counter() - t3
+                    prof_frames += 1
+
+                    now = time.perf_counter()
+                    if now - prof_t0 >= 5.0:
+                        total = prof_capture + prof_resize + prof_write
+                        logging.info(
+                            f"[PROF] {prof_frames} frames in {now - prof_t0:.1f}s | "
+                            f"capture: {prof_capture/total*100:.0f}% ({prof_capture/prof_frames*1000:.1f}ms) | "
+                            f"resize: {prof_resize/total*100:.0f}% ({prof_resize/prof_frames*1000:.1f}ms) | "
+                            f"write: {prof_write/total*100:.0f}% ({prof_write/prof_frames*1000:.1f}ms)"
+                        )
+                        prof_t0 = now
+                        prof_frames = 0
+                        prof_capture = 0.0
+                        prof_resize = 0.0
+                        prof_write = 0.0
                 except Exception as e:
                     logging.error(tr.t("log.frame_error", error=e), exc_info=True)
 
@@ -177,16 +205,43 @@ class ScreenRecorder(QObject):
 
         camera.start(target_fps=fps, video_mode=True)
 
+        prof_t0 = time.perf_counter()
+        prof_frames = 0
+        prof_capture = 0.0
+        prof_resize = 0.0
+        prof_write = 0.0
+
         while not self.stop_event.is_set():
             try:
+                t1 = time.perf_counter()
                 frame = camera.get_latest_frame()
+                t2 = time.perf_counter()
                 if frame is None:
                     time.sleep(0.005)
                     continue
-                frame = frame[:, :, :3]
+                prof_capture += t2 - t1
                 if need_resize:
                     frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
+                    prof_resize += time.perf_counter() - t2
+                t3 = time.perf_counter()
                 writer.write(frame)
+                prof_write += time.perf_counter() - t3
+                prof_frames += 1
+
+                now = time.perf_counter()
+                if now - prof_t0 >= 5.0:
+                    total = prof_capture + prof_resize + prof_write
+                    logging.info(
+                        f"[PROF] {prof_frames} frames in {now - prof_t0:.1f}s | "
+                        f"capture: {prof_capture/total*100:.0f}% ({prof_capture/prof_frames*1000:.1f}ms) | "
+                        f"resize: {prof_resize/total*100:.0f}% ({prof_resize/prof_frames*1000:.1f}ms) | "
+                        f"write: {prof_write/total*100:.0f}% ({prof_write/prof_frames*1000:.1f}ms)"
+                    )
+                    prof_t0 = now
+                    prof_frames = 0
+                    prof_capture = 0.0
+                    prof_resize = 0.0
+                    prof_write = 0.0
             except Exception as e:
                 logging.error(tr.t("log.frame_error", error=e), exc_info=True)
 
