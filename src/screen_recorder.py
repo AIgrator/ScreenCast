@@ -8,7 +8,6 @@ import numpy as np
 import cv2
 import mss
 import soundcard as sc
-import soundfile as sf
 import imageio_ffmpeg
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -75,16 +74,66 @@ class ScreenRecorder(QObject):
 
         pattern = self.sm.get("filename_pattern", "%Y%m%d-%H%M%S") if self.sm else "%Y%m%d-%H%M%S"
         base_name = parse_filename_pattern(pattern, self.output_dir)
-
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        self.video_temp = os.path.join(self.output_dir, f"temp_video_{timestamp}.mp4")
-        self.audio_temp = os.path.join(self.output_dir, f"temp_audio_{timestamp}.wav")
         self.output_file = os.path.join(self.output_dir, f"{base_name}.mp4")
 
         self.stop_event = threading.Event()
         self.video_thread = None
         self.audio_thread = None
         self.is_recording = False
+
+        self._ffmpeg_proc = None
+        self._video_pipe_w = None
+        self._audio_pipe_w = None
+
+    def start(self):
+        if self.is_recording:
+            return
+        logging.info(tr.t("log.starting_recording"))
+
+        res_key = self.sm.get("video_resolution", "720p")
+        preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
+        self._out_w = preset["width"]
+        self._out_h = preset["height"]
+        self._fps = self.sm.get("video_fps", 30)
+        self._samplerate = self.sm.get("audio_sample_rate", 48000)
+
+        ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+        encoder = self.sm.get("video_encoder", "auto")
+        vcodec = detect_hw_encoder(ffmpeg_bin) if encoder == "auto" else encoder
+        vbr = self.sm.get("video_bitrate", 1500)
+        abr = self.sm.get("audio_bitrate", 256)
+
+        v_r, self._video_pipe_w = os.pipe()
+        a_r, self._audio_pipe_w = os.pipe()
+
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-f", "rawvideo", "-vcodec", "rawvideo",
+            "-pix_fmt", "bgr24", "-s", f"{self._out_w}x{self._out_h}",
+            "-r", str(self._fps),
+            "-i", f"pipe:{v_r}",
+            "-f", "s16le",
+            "-sample_rate", str(self._samplerate),
+            "-channels", "2",
+            "-i", f"pipe:{a_r}",
+            "-c:v", vcodec, "-b:v", f"{vbr}k",
+            "-c:a", "aac", "-b:a", f"{abr}k",
+            "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart",
+            self.output_file
+        ]
+
+        logging.info(f"FFmpeg combined: {' '.join(cmd)}")
+        self._ffmpeg_proc = subprocess.Popen(cmd, pass_fds=(v_r, a_r))
+        os.close(v_r)
+        os.close(a_r)
+
+        self.is_recording = True
+        self.stop_event.clear()
+        self.video_thread = threading.Thread(target=self._record_video, daemon=True)
+        self.audio_thread = threading.Thread(target=self._record_audio, daemon=True)
+        self.video_thread.start()
+        self.audio_thread.start()
 
     def _record_video(self):
         logging.info(tr.t("log.video_thread_started"))
@@ -105,38 +154,6 @@ class ScreenRecorder(QObject):
         except Exception as e:
             logging.error(tr.t("log.video_thread_error", error=e), exc_info=True)
 
-    def _start_ffmpeg_writer(self, w, h, fps):
-        ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
-
-        encoder = self.sm.get("video_encoder", "auto")
-        if encoder == "auto":
-            vcodec = detect_hw_encoder(ffmpeg_bin)
-        else:
-            vcodec = encoder
-
-        vbr = self.sm.get("video_bitrate", 1500)
-
-        cmd = [
-            ffmpeg_bin, "-y",
-            "-f", "rawvideo", "-vcodec", "rawvideo",
-            "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps),
-            "-i", "pipe:0",
-            "-c:v", vcodec, "-b:v", f"{vbr}k",
-            "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart",
-            self.video_temp
-        ]
-        logging.info(f"FFmpeg writer: {' '.join(cmd)}")
-        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-
-        stderr_lines = []
-        def read_stderr():
-            for line in proc.stderr:
-                stderr_lines.append(line.decode("utf-8", errors="ignore").strip())
-        threading.Thread(target=read_stderr, daemon=True).start()
-
-        return proc, stderr_lines
-
     def _record_video_mss(self):
         with mss.MSS() as sct:
             if self.monitor_index < len(sct.monitors):
@@ -147,18 +164,14 @@ class ScreenRecorder(QObject):
 
             src_w = monitor["width"]
             src_h = monitor["height"]
-
-            res_key = self.sm.get("video_resolution", "720p")
-            preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
-            out_w = preset["width"]
-            out_h = preset["height"]
-            fps = self.sm.get("video_fps", 15)
-
+            out_w = self._out_w
+            out_h = self._out_h
+            fps = self._fps
             need_resize = (src_w != out_w or src_h != out_h)
+
             logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
-            proc, stderr_lines = self._start_ffmpeg_writer(out_w, out_h, fps)
-
+            pipe_fd = self._video_pipe_w
             frame_interval = 1.0 / fps
             next_frame_time = time.time()
 
@@ -180,7 +193,7 @@ class ScreenRecorder(QObject):
                             frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                             prof_resize += time.perf_counter() - t2
                         t3 = time.perf_counter()
-                        proc.stdin.write(frame.tobytes())
+                        os.write(pipe_fd, frame.tobytes())
                         prof_write += time.perf_counter() - t3
                         prof_frames += 1
 
@@ -207,31 +220,25 @@ class ScreenRecorder(QObject):
                         time.sleep(sleep_time)
                     else:
                         next_frame_time = time.time()
-            finally:
-                if proc.stdin:
-                    proc.stdin.close()
-                proc.wait()
-                if proc.returncode != 0:
-                    logging.error(f"FFmpeg writer error ({proc.returncode}): {' '.join(stderr_lines[-5:])}")
-                logging.info(tr.t("log.video_writer_closed"))
+            except OSError:
+                pass
+            logging.info(tr.t("log.video_writer_closed"))
 
     def _record_video_dxcam(self):
         import dxcam
 
-        res_key = self.sm.get("video_resolution", "720p")
-        preset = RESOLUTION_PRESETS.get(res_key, RESOLUTION_PRESETS["720p"])
-        out_w = preset["width"]
-        out_h = preset["height"]
-        fps = self.sm.get("video_fps", 15)
+        out_w = self._out_w
+        out_h = self._out_h
+        fps = self._fps
 
         camera = dxcam.create(output_idx=self.monitor_index - 1, backend="dxgi")
         src_w = camera.width
         src_h = camera.height
         need_resize = (src_w != out_w or src_h != out_h)
+
         logging.info(tr.t("log.monitor_capture", index=self.monitor_index, src_w=src_w, src_h=src_h, out_w=out_w, out_h=out_h, fps=fps))
 
-        proc, stderr_lines = self._start_ffmpeg_writer(out_w, out_h, fps)
-
+        pipe_fd = self._video_pipe_w
         camera.start(target_fps=fps, video_mode=True)
 
         prof_t0 = time.perf_counter()
@@ -254,7 +261,7 @@ class ScreenRecorder(QObject):
                         frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         prof_resize += time.perf_counter() - t2
                     t3 = time.perf_counter()
-                    proc.stdin.write(frame.tobytes())
+                    os.write(pipe_fd, frame.tobytes())
                     prof_write += time.perf_counter() - t3
                     prof_frames += 1
 
@@ -274,17 +281,15 @@ class ScreenRecorder(QObject):
                         prof_write = 0.0
                 except Exception as e:
                     logging.error(tr.t("log.frame_error", error=e), exc_info=True)
+        except OSError:
+            pass
         finally:
             camera.stop()
-            if proc.stdin:
-                proc.stdin.close()
-            proc.wait()
-            if proc.returncode != 0:
-                logging.error(f"FFmpeg writer error ({proc.returncode}): {' '.join(stderr_lines[-5:])}")
             logging.info(tr.t("log.video_writer_closed"))
 
     def _record_audio(self):
         logging.info(tr.t("log.audio_thread_started"))
+        pipe_fd = self._audio_pipe_w
         try:
             sp = None
             if self.audio_device_id is not None:
@@ -301,131 +306,53 @@ class ScreenRecorder(QObject):
 
             logging.info(tr.t("log.loopback_info", name=sp.name, channels=sp.channels, samplerate=samplerate))
 
-            with mic.recorder(samplerate=samplerate, channels=sp.channels, blocksize=4096) as recorder, \
-                 sf.SoundFile(self.audio_temp, mode='w', samplerate=samplerate, channels=out_channels, subtype='PCM_16') as file:
+            with mic.recorder(samplerate=samplerate, channels=sp.channels, blocksize=4096) as recorder:
                 while not self.stop_event.is_set():
                     try:
                         data = recorder.record(numframes=4096)
                         if data.shape[1] > 2:
                             data = data[:, :2]
-                        file.write(data)
+                        pcm = (data * 32767).clip(-32768, 32767).astype(np.int16)
+                        os.write(pipe_fd, pcm.tobytes())
                     except Exception as e:
                         logging.error(tr.t("log.audio_frame_error", error=e), exc_info=True)
                         time.sleep(0.01)
             logging.info(tr.t("log.audio_finished"))
+        except OSError:
+            pass
         except Exception as e:
             logging.error(tr.t("log.audio_thread_error", error=e), exc_info=True)
-
-    def start(self):
-        if self.is_recording:
-            return
-        logging.info(tr.t("log.starting_recording"))
-        self.is_recording = True
-        self.stop_event.clear()
-        self.video_thread = threading.Thread(target=self._record_video, daemon=True)
-        self.audio_thread = threading.Thread(target=self._record_audio, daemon=True)
-        self.video_thread.start()
-        self.audio_thread.start()
 
     def stop(self):
         if not self.is_recording:
             return
         logging.info(tr.t("log.stopping_recording"))
         self.stop_event.set()
+        threading.Thread(target=self._finalize, daemon=True).start()
+
+    def _finalize(self):
         if self.video_thread:
             self.video_thread.join()
         if self.audio_thread:
             self.audio_thread.join()
-        self.is_recording = False
-        threading.Thread(target=self._mux_files, daemon=True).start()
 
-    def _get_duration(self, filepath):
-        try:
-            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
-            cmd = [ffmpeg_bin, "-i", filepath, "-f", "null", "-"]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            for line in result.stderr.splitlines():
-                if "Duration:" in line:
-                    dur_str = line.split("Duration:")[1].split(",")[0].strip()
-                    h, m, s = dur_str.split(":")
-                    return int(h) * 3600 + int(m) * 60 + float(s)
-        except Exception:
-            pass
-        return None
+        for name, fd in [("video", self._video_pipe_w), ("audio", self._audio_pipe_w)]:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+        self._video_pipe_w = None
+        self._audio_pipe_w = None
 
-    def _mux_files(self):
-        try:
-            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
-            has_audio = os.path.exists(self.audio_temp) and os.path.getsize(self.audio_temp) > 0
-            abr = self.sm.get("audio_bitrate", 256)
-
-            duration = self._get_duration(self.video_temp)
-            logging.info(tr.t("log.video_duration", duration=duration))
-
-            if has_audio:
-                cmd = [
-                    ffmpeg_bin, "-y",
-                    "-i", self.video_temp, "-i", self.audio_temp,
-                    "-c:v", "copy",
-                    "-c:a", "aac", "-b:a", f"{abr}k",
-                    "-shortest", "-progress", "pipe:1",
-                    self.output_file
-                ]
+        if self._ffmpeg_proc:
+            logging.info("FFmpeg: waiting for finish...")
+            self._ffmpeg_proc.wait()
+            if self._ffmpeg_proc.returncode != 0:
+                logging.error(f"FFmpeg exited with code {self._ffmpeg_proc.returncode}")
             else:
-                logging.warning(tr.t("log.no_audio"))
-                cmd = [
-                    ffmpeg_bin, "-y",
-                    "-i", self.video_temp,
-                    "-c:v", "copy",
-                    "-progress", "pipe:1",
-                    self.output_file
-                ]
+                logging.info(tr.t("log.mux_done", path=self.output_file))
+            self._ffmpeg_proc = None
 
-            logging.info(tr.t("log.ffmpeg_cmd", cmd=" ".join(cmd)))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-            stderr_lines = []
-            def read_stderr():
-                for line in proc.stderr:
-                    stderr_lines.append(line.decode("utf-8", errors="ignore").strip())
-
-            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-            stderr_thread.start()
-
-            for raw_line in proc.stdout:
-                line = raw_line.decode("utf-8", errors="ignore").strip()
-                if line.startswith("out_time_us="):
-                    try:
-                        us = int(line.split("=", 1)[1])
-                        current = us / 1_000_000
-                        if duration and duration > 0:
-                            pct = min(int(current / duration * 100), 99)
-                            self.progress.emit(pct)
-                            logging.info(tr.t("log.ffmpeg_progress", current=current, duration=duration, pct=pct))
-                    except (ValueError, ZeroDivisionError):
-                        pass
-
-            proc.wait()
-            stderr_thread.join(timeout=5)
-
-            if proc.returncode != 0:
-                stderr_text = "\n".join(stderr_lines)
-                logging.error(tr.t("log.ffmpeg_stderr", text=stderr_text))
-                raise subprocess.CalledProcessError(proc.returncode, cmd, stderr=stderr_text)
-
-            self.progress.emit(100)
-            logging.info(tr.t("log.mux_done", path=self.output_file))
-            self.finished.emit(self.output_file)
-        except subprocess.CalledProcessError as e:
-            logging.error(tr.t("log.ffmpeg_stderr", text=e.stderr), exc_info=True)
-            self.finished.emit("")
-        except Exception as e:
-            logging.error(tr.t("log.mux_error", error=e), exc_info=True)
-            self.finished.emit("")
-        finally:
-            for f in [self.video_temp, self.audio_temp]:
-                if os.path.exists(f):
-                    try:
-                        os.remove(f)
-                    except Exception:
-                        pass
+        self.is_recording = False
+        self.finished.emit(self.output_file)
