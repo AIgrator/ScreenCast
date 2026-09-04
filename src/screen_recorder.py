@@ -305,7 +305,7 @@ class ScreenRecorder(QObject):
                         frame = cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_LINEAR)
                         prof_resize += time.perf_counter() - t2
                     t3 = time.perf_counter()
-                    stdin.write(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).tobytes())
+                    stdin.write(frame.tobytes())
                     prof_write += time.perf_counter() - t3
                     prof_frames += 1
 
